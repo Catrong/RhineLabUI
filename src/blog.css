@@ -920,3 +920,12 @@
 .blog-app #detail-ui {
   display: none !important;
 }
+
+/* Reserve header space during extraction, but expose navigation only with text. */
+#blog.is-extracting .blog-header {
+  visibility: hidden;
+  pointer-events: none;
+}
+#blog:not(.is-extracting) .blog-extraction-skip {
+  display: none;
+}

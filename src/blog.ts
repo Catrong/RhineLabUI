@@ -277,7 +277,7 @@ export class BlogApp {
           this.progress();
           this.animateEntrance(
             this.root.querySelectorAll<HTMLElement>(
-              ".blog-article-header,.blog-prose,.blog-reading-aside,.blog-reading-progress",
+              ".blog-header,.blog-article-header,.blog-prose,.blog-reading-aside,.blog-reading-progress",
             ),
           );
           this.root
