@@ -1,3 +1,5 @@
+import { BlogApp } from "./blog";
+let blog: BlogApp | undefined;
 import { createRollingClock } from "./rolling-clock";
 import { InspectionOverlay } from "./inspection-overlay";
 import { DocumentDecryption } from "./document-decryption";
@@ -381,6 +383,7 @@ function setMode(next: Mode) {
       $("#detail-content").inert = false;
     }
   }
+  blog?.syncMode(next);
 }
 function select(index: number, navigation?: ArchiveNavigation) {
   selected = (index + records.length) % records.length;
@@ -797,6 +800,7 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (!started) return;
+  if (blog?.visible) return;
   if (viewer?.isOpen) return;
   if (playground?.active && !modal) {
     if (e.key === "Escape") { e.preventDefault(); playground.stop(); }
@@ -964,7 +968,7 @@ function frame(ms: number) {
     $("#detail-content").style.translate =
       `0 ${(1 - scene.detailVisibility) * 18}px`;
     $("#detail-content").inert = scene.detailVisibility < 0.1;
-    if (pendingDetailFocus && scene.detailVisibility >= 0.1 && !modal && !viewer?.isOpen) {
+    if (!blog?.visible && pendingDetailFocus && scene.detailVisibility >= 0.1 && !modal && !viewer?.isOpen) {
       $("#detail-content").focus({ preventScroll: true });
       pendingDetailFocus = false;
     }
@@ -1106,7 +1110,7 @@ async function start() {
     savePrefs();
     ready = true;
     select(0);
-    if (entry) entry.ready();
+    if (entry && !location.hash.startsWith("#/")) entry.ready();
     else {
       if (isWallpaper) {
         // CEF allows automatic audio; never block the visual on audio policy or decoding.
@@ -1116,6 +1120,16 @@ async function start() {
     }
   } catch (error) {
     console.error(error);
+    if (blog) {
+      scene?.dispose();
+      scene = undefined;
+      loading.remove();
+      ready = true;
+      started = true;
+      $("#stage").inert = false;
+      blog.withoutScene();
+      return;
+    }
     $("#loading").innerHTML =
       '<div class="error-state"><strong>CONNECTION INTERRUPTED</strong><p>三维档案资源未能载入。请确认浏览器已启用硬件加速，然后重新连接。</p><button onclick="location.reload()">RECONNECT →</button></div>';
   }
@@ -1134,7 +1148,7 @@ function completeStartup(silent: boolean) {
   bootStart = performance.now() / 1000 - (reviewParams.has("time") ? Number(reviewParams.get("time")) : 1.76);
   if (!reviewParams.has("time")) bootStart += fade / 1000;
   setMode("boot");
-  if (reviewParams.get("scene") === "archive" || (prefs.reduced && !reviewParams.has("time"))) setMode("archive");
+  if (location.hash.startsWith("#/") || reviewParams.get("scene") === "archive" || (prefs.reduced && !reviewParams.has("time"))) setMode("archive");
   if (reviewParams.get("scene") === "detail") setMode("detail");
   if (isWallpaper && wallpaperHost()?.properties.boot?.value === false) setMode("archive");
   $("#stage").inert = false;
@@ -1215,6 +1229,23 @@ if (isWallpaper) {
   document.addEventListener("click", event => {
     const button = (event.target as Element).closest<HTMLElement>("[data-workbench-mode]");
     if (button) closeModal(() => { workbench!.setEnabled(button.dataset.workbenchMode === "workbench"); });
+  });
+}
+if (!isWallpaper && !reviewEntry) {
+  blog = new BlogApp({
+    article: index => {
+      if (!ready) return;
+      closeModal(() => {
+        select(index % records.length);
+        setMode("detail");
+        pendingDetailFocus = false;
+        audio.play("open");
+      });
+    },
+    home: () => { if (ready) closeModal(() => setMode("archive")); },
+    replay: () => replayBoot(),
+    theme: () => { prefs.colorTheme = prefs.colorTheme === "dark" ? "light" : "dark"; savePrefs(); if (!scene) paintTheme(prefs.colorTheme === "dark" ? 1 : 0); },
+    reduced: () => prefs.reduced,
   });
 }
 void start();

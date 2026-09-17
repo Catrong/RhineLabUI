@@ -1,8 +1,32 @@
-# RHINE LAB · ANALYSIS OS
+# RHINE JOURNAL · 莱茵手记
+
+保留 Rhine Lab 原生开场与三维动画的静态博客，适合长文阅读、分类浏览与全文检索。
+
+- **文章索引**：分类、标签、正文搜索、排序、分页和本机收藏，筛选条件可分享。
+- **长文阅读**：Markdown、章节目录、阅读进度、字号与专注模式，支持代码、表格、图片及手机横竖屏。
+- **原有动画**：启动、玻璃阵列、抽取与归位继续保留；导航中的「三维档案」可体验完整原交互。
+- **内容独立**：编辑 `content/posts.json` 和 `content/posts/*.md`，文章数量与分类数量不受原阵列限制。附带 6 篇可替换示例。
+
+```sh
+npm ci
+npm run dev
+npm run check:blog
+npm run build
+```
+
+构建输出 `dist/`，可部署到静态托管。文章使用 `#/post/<slug>` 地址，刷新与分享不需要服务器重写规则。已有 PWA 与 Cloudflare 构建流程继续可用。本次不包含远程上线。
+
+[写作与维护指南](docs/BLOG.md) · [博客验证记录](verification/BLOG.md) · [文章元信息](content/posts.json)
+
+下方保留原项目来源、动画、资源和许可说明；其中在线地址是原项目参考站点。
+
+---
+
+# 原项目与三维体验资料
 
 **把莱茵生命的终端，做成可以操作的三维界面。**
 
-**[在线体验 → rhine.lubeiluchen.cc](https://rhine.lubeiluchen.cc/)**
+**[原项目在线参考（非本博客部署）→ rhine.lubeiluchen.cc](https://rhine.lubeiluchen.cc/)**
 
 iPhone 可用 Safari 打开在线版，通过“分享 → 添加到主屏幕”安装；从主屏幕图标进入可使用独立窗口。首次联网后，设置中显示“离线资源已就绪”即可离线浏览档案和模型。支持桌面不同比例、手机横竖屏和触摸操作。[安装与更新说明](docs/PWA.md)
 

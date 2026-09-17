@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/patch-rolling-number.mjs",
-    "predev": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs",
+    "predev": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && npm run check:blog",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && node scripts/prepare-webfonts.mjs",
+    "prebuild": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && node scripts/prepare-webfonts.mjs && npm run check:blog",
     "check:content": "node --experimental-strip-types --test scripts/check-content.mjs",
     "check:viewport": "node --experimental-strip-types scripts/check-viewport.mjs",
     "review:mobile": "node scripts/serve-mobile-review.mjs",
@@ -17,10 +17,13 @@
     "build:cloudflare": "npm run build && node scripts/package-cloudflare.mjs",
     "build:wallpaper": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && tsc && vite build --mode wallpaper --outDir release/wallpaper && node scripts/build-wallpaper.mjs",
     "format": "prettier --write src scripts index.html package.json tsconfig.json",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "check:blog": "node --experimental-strip-types --test scripts/check-blog.mjs"
   },
   "dependencies": {
     "@kitlangton/rolling-number": "0.4.1",
+    "dompurify": "^3.4.15",
+    "marked": "^18.0.13",
     "three": "^0.183.0"
   },
   "devDependencies": {
@@ -30,4 +33,3 @@
     "vite": "^7.3.1"
   }
 }
-

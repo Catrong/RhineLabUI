@@ -1,3 +1,5 @@
+> 博客文章请查看 [博客维护指南](../docs/BLOG.md)：编辑 `posts.json` 和 `posts/*.md`。以下文档仅描述保留的原三维档案体验数据。
+
 # 修改档案内容
 
 [`archives.json`](archives.json) 是页面与 TXT 下载共用的档案数据。修改内容无需编辑 TypeScript；`src/data.ts` 只保留类型和阵列位置映射。

@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Rhine Lab · Analysis OS",
+  "name": "Rhine Journal · 莱茵手记",
   "short_name": "Rhine Lab",
-  "description": "莱茵生命交互式三维研究档案终端",
+  "description": "技术、设计与日常观察的个人博客",
   "lang": "zh-CN",
   "start_url": "./?source=pwa",
   "scope": "./",
