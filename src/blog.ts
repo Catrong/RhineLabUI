@@ -72,6 +72,7 @@ export class BlogApp {
   }
 
   constructor(private host: BlogHost) {
+    document.body.classList.add("blog-app");
     const saved = stored<unknown>("rhine-blog-saved", []);
     if (Array.isArray(saved))
       this.saved = new Set(

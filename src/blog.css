@@ -922,3 +922,9 @@
     display: none;
   }
 }
+
+/* Legacy redacted details never participate in blog route transitions.
+   blog-visible is transient during cancellation/return; blog-app is persistent. */
+.blog-app #detail-ui {
+  display: none !important;
+}
