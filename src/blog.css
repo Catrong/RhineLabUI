@@ -51,17 +51,18 @@
 #blog.is-reading .blog-scroll {
   transition: opacity 0.38s ease-out;
 }
-.blog-extraction-status {
+.blog-extraction-skip {
   position: absolute;
-  inset: auto 5vw 7vh;
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px 22px;
-  background: var(--blog-paper);
-  border-top: 1px solid var(--blog-line);
-  font-size: 13px;
+  top: max(24px, env(safe-area-inset-top));
+  right: max(24px, env(safe-area-inset-right));
+  z-index: 2;
+  padding: 12px 8px;
+  color: var(--blog-ink);
+  font: inherit;
+  letter-spacing: 1px;
+  cursor: pointer;
 }
+.blog-extraction-skip span {font-size: 11px;letter-spacing: -2px;}
 .blog-document-destination {
   height: min(600px, calc(100dvh - 190px));
 }
@@ -898,15 +899,6 @@
 }
 .blog-extracting .scene-atmosphere {
   opacity: 0 !important;
-}
-
-@media (max-width: 700px) {
-  .blog-extraction-status {
-    top: 126px;
-    bottom: auto;
-    padding: 12px;
-    font-size: 11px;
-  }
 }
 
 /* The added home entry gets its own row below the brand on portrait screens. */

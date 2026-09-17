@@ -630,6 +630,12 @@ export class ArchiveScene {
     this.articleFrame=documentExtraction(-1);
     return new Promise(resolve=>this.articleResolve=resolve);
   }
+  skipArticle() {
+    if (!this.articleActive) return;
+    this.articleElapsed=DOCUMENT_EXTRACTION_DURATION;
+    this.articleFrame=documentExtraction(DOCUMENT_EXTRACTION_DURATION);
+    this.finishArticle(true);
+  }
   cancelArticle() {
     if (!this.articleActive) return Promise.resolve();
     this.articleCancel=1;

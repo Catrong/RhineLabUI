@@ -29,6 +29,7 @@ interface BlogHost {
     destination: () => DOMRect | undefined,
     onRetreat: () => void,
   ): Promise<boolean>;
+  skipArticle(): void;
   home(): Promise<void>;
   replay(): void;
   theme(): void;
@@ -295,7 +296,7 @@ export class BlogApp {
         if (this.extracting)
           this.root.insertAdjacentHTML(
             "beforeend",
-            `<div class="blog-extraction-status" role="status"><span>正在打开 · ${esc(post.title)}</span><a href="${esc(this.lastList)}">取消并返回 ×</a></div>`,
+            `<button class="blog-extraction-skip" data-blog="skip-article" aria-label="跳过打开动画">skip <span aria-hidden="true">▶▶</span></button>`,
           );
         void opening
           .then(() => {
@@ -598,6 +599,10 @@ export class BlogApp {
   }
 
   private click(event: MouseEvent) {
+    if ((event.target as Element).closest('[data-blog="skip-article"]')) {
+      if (this.extracting) this.host.skipArticle();
+      return;
+    }
     const link = (event.target as Element).closest<HTMLAnchorElement>("a");
     if (link?.getAttribute("href")?.startsWith("#section-")) {
       const heading = this.root.querySelector<HTMLElement>(

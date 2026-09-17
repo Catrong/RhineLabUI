@@ -1272,10 +1272,12 @@ if (isWallpaper) {
   });
 }
 let articleRequest=0;
+let articleSkipRequested=false;
 if (!isWallpaper && !reviewEntry) {
   blog = new BlogApp({
     article: async (index, destination, onRetreat) => {
       const request=++articleRequest;
+      articleSkipRequested=false;
       if (!ready || !posts[index]) return false;
       await scene?.cancelArticle();
       if(request!==articleRequest)return false;
@@ -1283,8 +1285,11 @@ if (!isWallpaper && !reviewEntry) {
       setMode("detail");
       pendingDetailFocus = false;
       audio.play("open");
-      return scene ? scene.playArticle(posts[index], destination, onRetreat) : true;
+      const opening=scene ? scene.playArticle(posts[index], destination, onRetreat) : true;
+      if(articleSkipRequested)scene?.skipArticle();
+      return opening;
     },
+    skipArticle: () => { articleSkipRequested=true; scene?.skipArticle(); },
     home: async () => {
       const request=++articleRequest;
       await scene?.cancelArticle();
