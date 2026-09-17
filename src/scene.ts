@@ -683,7 +683,8 @@ export class ArchiveScene {
       this.articleElapsed=Math.max(-1,this.articleElapsed-dt*8);
       if(this.articleElapsed<0) {this.finishArticle(false);return;}
     } else if(this.articleElapsed<0) {
-      if(this.detail<.9 || this.lift.value<3.7)return;
+      // Physical clearance is sufficient; do not wait for the camera to settle.
+      if(this.lift.value<3.7)return;
       this.articleElapsed=0;
       this.articleInitialClarity=this.decryption.clarity;
     } else this.articleElapsed+=dt;
@@ -1875,8 +1876,9 @@ export class ArchiveScene {
       detailAim.addScaledVector(up, (framing.detailY - 0.5) * height / pixelScale);
       cameraAim.lerp(detailAim, detail);
     }
-    const articleFramingTarget=this.articleActive ? this.articleFrame.paperX/5.5 : 0;
-    this.articleFraming=this.reduced ? 0 : THREE.MathUtils.lerp(this.articleFraming,articleFramingTarget,1-Math.exp(-dt*7));
+    const articleFramingTarget=this.articleActive ? this.articleFrame.cameraFraming : 0;
+    const restoringArticleCamera=this.articleFraming>.001 && articleFramingTarget<this.articleFraming;
+    this.articleFraming=this.reduced ? 0 : THREE.MathUtils.lerp(this.articleFraming,articleFramingTarget,1-Math.exp(-dt*(restoringArticleCamera ? 12 : 7)));
     if (!cinematic && this.articleFraming>.0001) {
       // Fit case and sheet together; restore the camera smoothly as UI enters.
       cameraAim.x += (framing.portrait ? 2.6 : 1.4)*this.articleFraming;
@@ -1889,7 +1891,7 @@ export class ArchiveScene {
       cameraPosition.x += this.pointer.x * 0.12;
       cameraPosition.y -= this.pointer.y * 0.12;
     }
-    const cameraBlend = cinematic ? 1 : 1 - Math.exp(-dt * 5);
+    const cameraBlend = cinematic ? 1 : 1 - Math.exp(-dt * (restoringArticleCamera ? 9 : 5));
     this.camera.position.lerp(cameraPosition, cameraBlend);
     this.cameraAim.lerp(cameraAim, cameraBlend);
     this.camera.lookAt(this.cameraAim);

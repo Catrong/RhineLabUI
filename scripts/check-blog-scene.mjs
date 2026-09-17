@@ -4,6 +4,7 @@ import { createArchiveCatalog } from "../src/archive-catalog.ts";
 import {
   documentExtraction,
   DOCUMENT_EXTRACTION_DURATION,
+  DOCUMENT_PAPER_START,
 } from "../src/document-extraction.ts";
 import { normalizeQuality, qualityPresets } from "../src/render-quality.ts";
 import {
@@ -109,9 +110,9 @@ test("glass clears before paper moves; a single clock drives extraction and trav
       documentExtraction(0.32).clarity < 1,
   );
   assert.equal(documentExtraction(0.65).clarity, 1);
-  assert.equal(documentExtraction(0.85).paperX, 0);
+  assert.equal(documentExtraction(DOCUMENT_PAPER_START).paperX, 0);
   let previous = 0;
-  for (let t = 0.85; t < 3.15; t += 0.005) {
+  for (let t = DOCUMENT_PAPER_START; t < DOCUMENT_EXTRACTION_DURATION; t += 0.005) {
     const frame = documentExtraction(t);
     assert.ok(frame.motion >= previous);
     previous = frame.motion;
@@ -123,13 +124,17 @@ test("glass clears before paper moves; a single clock drives extraction and trav
     }
     if (frame.handoff > 0) assert.equal(frame.paperX, 5.5);
   }
-  const overlap = documentExtraction(2.15);
+  const overlap = documentExtraction(1.8);
   assert.equal(overlap.revealContent, true);
   assert.equal(overlap.paperOpacity, 1);
   assert.ok(overlap.handoff > 0 && overlap.handoff < 1);
-  assert.equal(documentExtraction(1.6).revealContent, false);
+  assert.equal(documentExtraction(1.2).revealContent, false);
   assert.ok(documentExtraction(3.15).handoff > 0.999);
   assert.equal(documentExtraction(3.15).spread, 0);
+  const returning = documentExtraction(2.1);
+  assert.ok(returning.cameraFraming < 1 && returning.cameraFraming >= 0);
+  assert.equal(returning.paperOpacity, 1, "camera restores while the paper is still retreating");
+  assert.equal(documentExtraction(DOCUMENT_EXTRACTION_DURATION - .1).cameraFraming, 0);
   const end = documentExtraction(DOCUMENT_EXTRACTION_DURATION);
   assert.equal(end.phase, "reading");
   assert.equal(end.paperOpacity, 0);
