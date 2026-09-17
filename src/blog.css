@@ -22,6 +22,36 @@
 .blog-return[hidden] {
   display: none;
 }
+#blog.is-extracting {
+  background: transparent !important;
+}
+#blog.is-extracting .blog-scroll,
+#blog.is-extracting .blog-reading-progress {
+  opacity: 0;
+  pointer-events: none;
+}
+#blog.is-reading .blog-scroll {
+  transition: opacity 0.38s ease-out;
+}
+.blog-extraction-status {
+  position: absolute;
+  inset: auto 5vw 7vh;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 22px;
+  background: var(--blog-paper);
+  border-top: 1px solid var(--blog-line);
+  font-size: 13px;
+}
+.blog-document-destination {
+  height: min(600px, calc(100dvh - 190px));
+}
+@media (max-width: 700px) {
+  .blog-document-destination {
+    height: max(230px, calc(100dvh - 365px));
+  }
+}
 #blog a {
   color: inherit;
   text-decoration: none;
@@ -844,5 +874,19 @@
   }
   .blog-prose {
     font-size: 12pt;
+  }
+}
+
+/* Keep the travelling sheet above the scene atmosphere, including portrait masks. */
+.blog-extracting .scene-atmosphere {
+  visibility: hidden !important;
+}
+
+@media (max-width: 700px) {
+  .blog-extraction-status {
+    top: 126px;
+    bottom: auto;
+    padding: 12px;
+    font-size: 11px;
   }
 }

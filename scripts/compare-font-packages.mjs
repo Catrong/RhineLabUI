@@ -8,7 +8,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(
 const root = resolve('.'), output = resolve('.tools/font-comparison');
 const weights = [[300,'Light'],[400,'Regular'],[600,'Demibold'],[700,'Bold']];
 const packages = ['original','dsrkafuu','mobeicanyue'];
-const content = JSON.parse(await readFile('content/archives.json','utf8'));
+const content = JSON.parse(await readFile('content/posts.json','utf8'));
 const strings = value => typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(strings) : [];
 const opening = 'RHINE LAB SYNTHESIZE INFORMATION ANALYSIS OS ACCESS JOYCE MOORE WELCOME TO INTERNAL DATABASE PERMISSION AUTHORIZED 身份信息确认请求已接收开始处理权限验证通过欢迎访问莱茵生命内部资料档案编号保密级别商业区选择档案0123456789：，。·＋－/';
 const corpus = [...new Set([...strings(content).join('') + opening])].join('');

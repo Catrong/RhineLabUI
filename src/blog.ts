@@ -1,24 +1,11 @@
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import metadata from "../content/posts.json";
-import { collectPosts, queryPosts, type Post } from "./blog-content";
+import { assetUrl } from "./asset-url";
+import { posts } from "./posts";
+import { queryPosts, type Post } from "./blog-content";
 import { escapeHtml as esc } from "./html";
 import "./blog.css";
 
-const sources = import.meta.glob("../content/posts/*.md", {
-  eager: true,
-  query: "?raw",
-  import: "default",
-}) as Record<string, string>;
-const posts = collectPosts(
-  metadata,
-  Object.fromEntries(
-    Object.entries(sources).map(([path, text]) => [
-      path.split("/").at(-1)!.slice(0, -3),
-      text,
-    ]),
-  ),
-);
 const siteTitle = "RHINE JOURNAL · 莱茵手记";
 const href = (post: Post) => `#/post/${post.slug}`;
 function stored<T>(key: string, fallback: T): T {
@@ -37,7 +24,10 @@ function persist(key: string, value: unknown) {
 }
 
 interface BlogHost {
-  article(index: number): void;
+  article(
+    index: number,
+    destination: () => DOMRect | undefined,
+  ): Promise<boolean>;
   home(): void;
   replay(): void;
   theme(): void;
@@ -63,6 +53,19 @@ export class BlogApp {
   private scrollTimer?: ReturnType<typeof setTimeout>;
   private routeVersion = 0;
   private sceneUnavailable = false;
+  private extracting = false;
+  openArticle(index: number) {
+    const post = posts[index];
+    if (!post) return;
+    if (location.hash === "#/experience") this.lastList = "#/experience";
+    location.hash = href(post);
+  }
+  get savedCount() {
+    return this.saved.size;
+  }
+  openSaved() {
+    location.hash = "#/?saved=1";
+  }
 
   constructor(private host: BlogHost) {
     const saved = stored<unknown>("rhine-blog-saved", []);
@@ -143,6 +146,14 @@ export class BlogApp {
     this.root.hidden = this.booting || experience;
     this.returnButton.hidden = this.booting || !experience;
     document.body.classList.toggle("blog-visible", !this.root.hidden);
+    this.root.classList.toggle("is-extracting", this.extracting);
+    document.body.classList.toggle(
+      "blog-extracting",
+      this.extracting && !this.root.hidden,
+    );
+    this.root
+      .querySelector<HTMLElement>(".blog-scroll")
+      ?.toggleAttribute("inert", this.extracting);
     document.querySelector<HTMLElement>("#three-scene")!.inert = !experience;
     // Exclude covered original controls from the tab order and accessibility tree.
     document
@@ -156,11 +167,12 @@ export class BlogApp {
 
   private route() {
     const oldScroll = this.root.querySelector<HTMLElement>(".blog-scroll");
-    if (oldScroll)
+    if (oldScroll && !this.extracting)
       this.positions.set(this.root.dataset.route ?? "#/", oldScroll.scrollTop);
     this.observer?.disconnect();
     clearTimeout(this.scrollTimer);
     const version = ++this.routeVersion;
+    this.extracting = false;
     if (this.sceneUnavailable && location.hash === "#/experience")
       history.replaceState(null, "", "#/");
     const hash = location.hash || "#/";
@@ -168,7 +180,7 @@ export class BlogApp {
     this.current = undefined;
     this.visibility();
     if (hash === "#/experience") {
-      document.title = "RHINE LAB · 三维档案";
+      document.title = "RHINE JOURNAL · 三维书架";
       this.host.home();
       document
         .querySelectorAll<HTMLElement>(".brand,.powered")
@@ -187,8 +199,39 @@ export class BlogApp {
       const post = posts.find((item) => `/post/${item.slug}` === path);
       if (post) {
         this.current = post;
-        this.host.article(posts.indexOf(post));
-        this.renderArticle(post);
+        this.extracting = !this.sceneUnavailable && !this.host.reduced();
+        this.renderExtraction();
+        const opening = this.host.article(posts.indexOf(post), () =>
+          this.root
+            .querySelector("[data-document-destination]")
+            ?.getBoundingClientRect(),
+        );
+        if (this.extracting)
+          this.root.insertAdjacentHTML(
+            "beforeend",
+            `<div class="blog-extraction-status" role="status"><span>正在打开 · ${esc(post.title)}</span><a href="${esc(this.lastList)}">取消并返回 ×</a></div>`,
+          );
+        void opening
+          .then((completed) => {
+            if (version !== this.routeVersion) return;
+            this.extracting = false;
+            this.renderArticle(post);
+            this.bindReadingScroll();
+            this.visibility();
+            this.progress();
+            if (completed)
+              this.root
+                .querySelector<HTMLElement>("h1")
+                ?.focus({ preventScroll: true });
+          })
+          .catch((error) => {
+            console.error(error);
+            if (version !== this.routeVersion) return;
+            this.extracting = false;
+            this.renderArticle(post);
+            this.bindReadingScroll();
+            this.visibility();
+          });
         document.title = `${post.title} · 莱茵手记`;
         this.description(post.description);
       } else this.notFound();
@@ -197,7 +240,7 @@ export class BlogApp {
     this.root.classList.toggle("is-reading", !!this.current);
     this.root.classList.toggle("is-focused", this.focused);
     this.root.style.setProperty("--reading-size", `${this.fontSize}px`);
-    if (!this.host.reduced())
+    if (!this.host.reduced() && !this.extracting)
       this.root.querySelector(".blog-scroll")?.animate(
         [
           { opacity: 0, transform: "translateY(10px)" },
@@ -234,8 +277,19 @@ export class BlogApp {
       .querySelector('meta[name="description"]')
       ?.setAttribute("content", text);
   }
+  private renderExtraction() {
+    this.root.innerHTML = `${this.header()}<div class="blog-scroll"><div class="blog-reading-layout"><aside class="blog-reading-aside"><a class="blog-back">← 文章索引</a><details class="blog-toc"><summary>本文目录 <span>CONTENTS</span></summary></details><div class="blog-reading-tools"><button>专注阅读 ↗</button><div><button>A−</button><span>${this.fontSize}</span><button>A＋</button></div><button>返回顶部 ↑</button></div></aside><div class="blog-article"><div class="blog-document-destination" data-document-destination></div></div></div></div>`;
+  }
+  private bindReadingScroll() {
+    const scroll = this.root.querySelector<HTMLElement>(".blog-scroll");
+    if (scroll)
+      scroll.scrollTop = this.positions.get(this.root.dataset.route ?? "") ?? 0;
+    scroll?.addEventListener("scroll", () => this.progress(), {
+      passive: true,
+    });
+  }
   private header() {
-    return `<header class="blog-header"><a class="blog-wordmark" href="#/" aria-label="莱茵手记首页"><b>RHINE<span> JOURNAL</span></b><small>莱茵手记 / IDEAS IN PROGRESS</small></a><nav aria-label="博客导航"><a href="#/">文章</a><a href="#/?saved=1">收藏 <span class="blog-saved-count">${this.saved.size}</span></a>${this.sceneUnavailable ? '<span role="status">三维暂不可用</span>' : '<a href="#/experience">三维档案 ↗</a>'}<button data-blog="theme" aria-label="切换明暗主题">◐ <span>配色</span></button></nav></header>`;
+    return `<header class="blog-header"><a class="blog-wordmark" href="#/" aria-label="莱茵手记首页"><b>RHINE<span> JOURNAL</span></b><small>莱茵手记 / IDEAS IN PROGRESS</small></a><nav aria-label="博客导航"><a href="#/">文章</a><a href="#/?saved=1">收藏 <span class="blog-saved-count">${this.saved.size}</span></a>${this.sceneUnavailable ? '<span role="status">三维暂不可用</span>' : '<a href="#/experience">三维书架 ↗</a>'}<button data-blog="theme" aria-label="切换明暗主题">◐ <span>配色</span></button></nav></header>`;
   }
   private footer() {
     return `<footer class="blog-footer"><span>RHINE JOURNAL <i>／</i> 记录 · 思考 · 分享</span>${this.sceneUnavailable ? "" : '<button data-blog="replay">重播开场 ↗</button>'}</footer>`;
@@ -244,7 +298,7 @@ export class BlogApp {
   private renderList(params: URLSearchParams) {
     const categories = [...new Set(posts.map((post) => post.category))];
     const tags = [...new Set(posts.flatMap((post) => post.tags))];
-    this.root.innerHTML = `${this.header()}<div class="blog-scroll" tabindex="-1"><main class="blog-index"><div class="blog-intro"><div class="blog-eyebrow">PERSONAL NOTES & EXPLORATIONS <span>01 — ${String(posts.length).padStart(2, "0")}</span></div><h1 tabindex="-1">记录思考，<br>让灵感有迹可循<span>。</span></h1><p>在技术与日常之间，留下一些值得回看的文字。</p><div class="blog-intro-line"></div></div><section class="blog-library" aria-label="文章目录"><div class="blog-library-top"><h2>${params.has("saved") ? "我的收藏" : "文章索引"} <small>/ JOURNAL INDEX</small></h2><span>${posts.length} 篇文章</span></div><form class="blog-filters" role="search"><label class="blog-search"><span>⌕</span><input id="blog-query" type="search" placeholder="搜索标题、标签或正文…" aria-label="全文搜索" value="${esc(params.get("q") ?? "")}"><kbd>/</kbd></label><div class="blog-selects"><label>分类<select id="blog-category" data-blog-filter><option value="">全部分类</option>${categories.map((category) => `<option${params.get("category") === category ? " selected" : ""}>${esc(category)}</option>`).join("")}</select></label><label>标签<select id="blog-tag" data-blog-filter><option value="">全部标签</option>${tags.map((tag) => `<option${params.get("tag") === tag ? " selected" : ""}>${esc(tag)}</option>`).join("")}</select></label><label>排序<select id="blog-order" data-blog-filter>${[
+    this.root.innerHTML = `${this.header()}<div class="blog-scroll" tabindex="-1"><main class="blog-index"><div class="blog-intro"><div class="blog-eyebrow">PERSONAL NOTES & EXPLORATIONS <span>${posts.length ? "01" : "00"} — ${String(posts.length).padStart(2, "0")}</span></div><h1 tabindex="-1">记录思考，<br>让灵感有迹可循<span>。</span></h1><p>在技术与日常之间，留下一些值得回看的文字。</p><div class="blog-intro-line"></div></div><section class="blog-library" aria-label="文章目录"><div class="blog-library-top"><h2>${params.has("saved") ? "我的收藏" : "文章索引"} <small>/ JOURNAL INDEX</small></h2><span>${posts.length} 篇文章</span></div><form class="blog-filters" role="search"><label class="blog-search"><span>⌕</span><input id="blog-query" type="search" placeholder="搜索标题、标签或正文…" aria-label="全文搜索" value="${esc(params.get("q") ?? "")}"><kbd>/</kbd></label><div class="blog-selects"><label>分类<select id="blog-category" data-blog-filter><option value="">全部分类</option>${categories.map((category) => `<option${params.get("category") === category ? " selected" : ""}>${esc(category)}</option>`).join("")}</select></label><label>标签<select id="blog-tag" data-blog-filter><option value="">全部标签</option>${tags.map((tag) => `<option${params.get("tag") === tag ? " selected" : ""}>${esc(tag)}</option>`).join("")}</select></label><label>排序<select id="blog-order" data-blog-filter>${[
       ["newest", "最新发布"],
       ["oldest", "最早发布"],
       ["title", "标题顺序"],
@@ -373,7 +427,7 @@ export class BlogApp {
       );
     });
     const index = posts.indexOf(post);
-    this.root.innerHTML = `${this.header()}<div class="blog-reading-progress" role="progressbar" aria-label="阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div><div class="blog-scroll" tabindex="0" aria-label="文章阅读区域"><div class="blog-reading-layout"><aside class="blog-reading-aside"><a class="blog-back" href="${esc(this.lastList)}">← 文章索引</a><details class="blog-toc" open><summary>本文目录 <span>CONTENTS</span></summary><nav aria-label="文章目录">${headings.map((heading) => `<button data-section="${heading.id}" class="${heading.tagName === "H3" || heading.tagName === "H4" ? "subsection" : ""}">${esc(heading.textContent ?? "")}</button>`).join("") || "<span>暂无章节</span>"}</nav></details><div class="blog-reading-tools"><button data-blog="focus" aria-pressed="${this.focused}">${this.focused ? "退出专注" : "专注阅读"} ↗</button><div><button data-blog="smaller" aria-label="缩小正文字号">A−</button><span id="blog-font-size">${this.fontSize}</span><button data-blog="larger" aria-label="放大正文字号">A＋</button></div><button data-blog="top">返回顶部 ↑</button></div></aside><main class="blog-article"><header class="blog-article-header"><div class="blog-eyebrow"><a href="#/?category=${encodeURIComponent(post.category)}">${esc(post.category)}</a><span>JOURNAL / ${String(index + 1).padStart(2, "0")}</span></div><h1 tabindex="-1">${esc(post.title)}</h1><p class="blog-deck">${esc(post.description)}</p><div class="blog-byline"><span>${esc(post.author)}</span><time datetime="${post.date}">${post.date}</time><span>${post.minutes} 分钟阅读</span></div><div class="blog-article-actions"><button data-blog="save" aria-pressed="${this.saved.has(post.slug)}">${this.saved.has(post.slug) ? "− 取消收藏" : "＋ 收藏文章"}</button><button data-blog="share">复制链接 ↗</button><span id="blog-feedback" role="status"></span></div></header><div class="blog-prose">${parsed.innerHTML}</div><div class="blog-end"><span>— END OF NOTE —</span><div>${post.tags.map((tag) => `<a href="#/?tag=${encodeURIComponent(tag)}">#${esc(tag)}</a>`).join("")}</div></div><nav class="blog-adjacent" aria-label="相邻文章">${index > 0 ? `<a href="${href(posts[index - 1])}"><small>← 较新文章</small>${esc(posts[index - 1].title)}</a>` : "<span></span>"}${index < posts.length - 1 ? `<a href="${href(posts[index + 1])}"><small>较早文章 →</small>${esc(posts[index + 1].title)}</a>` : ""}</nav>${this.footer()}</main></div></div>`;
+    this.root.innerHTML = `${this.header()}<div class="blog-reading-progress" role="progressbar" aria-label="阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div><div class="blog-scroll" tabindex="0" aria-label="文章阅读区域"><div class="blog-reading-layout"><aside class="blog-reading-aside"><a class="blog-back" href="${esc(this.lastList)}">← 文章索引</a><details class="blog-toc" open><summary>本文目录 <span>CONTENTS</span></summary><nav aria-label="文章目录">${headings.map((heading) => `<button data-section="${heading.id}" class="${heading.tagName === "H3" || heading.tagName === "H4" ? "subsection" : ""}">${esc(heading.textContent ?? "")}</button>`).join("") || "<span>暂无章节</span>"}</nav></details><div class="blog-reading-tools"><button data-blog="focus" aria-pressed="${this.focused}">${this.focused ? "退出专注" : "专注阅读"} ↗</button><div><button data-blog="smaller" aria-label="缩小正文字号">A−</button><span id="blog-font-size">${this.fontSize}</span><button data-blog="larger" aria-label="放大正文字号">A＋</button></div><button data-blog="top">返回顶部 ↑</button></div></aside><main class="blog-article"><header class="blog-article-header"><div class="blog-eyebrow"><a href="#/?category=${encodeURIComponent(post.category)}">${esc(post.category)}</a><span>JOURNAL / ${String(index + 1).padStart(2, "0")}</span></div><h1 tabindex="-1">${esc(post.title)}</h1><p class="blog-deck">${esc(post.description)}</p><div class="blog-byline"><span>${esc(post.author)}</span><time datetime="${post.date}">${post.date}</time><span>${post.minutes} 分钟阅读</span></div><div class="blog-article-actions"><button data-blog="save" aria-pressed="${this.saved.has(post.slug)}">${this.saved.has(post.slug) ? "− 取消收藏" : "＋ 收藏文章"}</button><button data-blog="share">复制链接 ↗</button><a href="${assetUrl(`archives/${post.slug}.md`)}" download="${post.slug}.md">下载原文 ↓</a><span id="blog-feedback" role="status"></span></div></header><div class="blog-prose">${parsed.innerHTML}</div><div class="blog-end"><span>— END OF NOTE —</span><div>${post.tags.map((tag) => `<a href="#/?tag=${encodeURIComponent(tag)}">#${esc(tag)}</a>`).join("")}</div></div><nav class="blog-adjacent" aria-label="相邻文章">${index > 0 ? `<a href="${href(posts[index - 1])}"><small>← 较新文章</small>${esc(posts[index - 1].title)}</a>` : "<span></span>"}${index < posts.length - 1 ? `<a href="${href(posts[index + 1])}"><small>较早文章 →</small>${esc(posts[index + 1].title)}</a>` : ""}</nav>${this.footer()}</main></div></div>`;
     const scroll = this.root.querySelector<HTMLElement>(".blog-scroll")!;
     if (matchMedia("(max-width: 700px)").matches)
       this.root.querySelector<HTMLDetailsElement>(".blog-toc")!.open = false;

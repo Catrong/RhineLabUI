@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { columnFiles, fileLocation } from "../src/data.ts";
+import { columnFiles, fileLocation, archiveColumns } from "../src/data.ts";
 import {
   fileAtCell,
   selectionCell,
@@ -11,25 +11,25 @@ import {
   wrap,
 } from "../src/archive-loop.ts";
 
-// The same eight files and five column categories recur on both sides of zero.
+// The blog articles and their categories recur on both sides of zero.
 for (let lane = -23; lane <= 23; lane++) {
-  const files = columnFiles(wrap(lane, 5));
+  const files = columnFiles(wrap(lane, archiveColumns.length));
   for (let row = -35; row <= 35; row++) {
-    assert.equal(fileAtCell({ lane, row }), files[wrap(row - 12, 8)]);
+    assert.equal(fileAtCell({ lane, row }), files[wrap(row - 12, files.length)]);
   }
 }
 let checks = 0;
 for (const direction of [-1, 1]) {
   let cell = { lane: 2, row: 12 };
   let index = fileAtCell(cell);
-  const memory = Array.from({ length: 5 }, (_, lane) => columnFiles(lane)[0]);
+  const memory = Array.from({ length: archiveColumns.length }, (_, lane) => columnFiles(lane)[0]);
   for (let step = 0; step < 10000; step++) {
     const axis = step % 17 < 10 ? "row" : "lane";
     const lane = fileLocation(index).lane;
     if (axis === "row") {
       const files = columnFiles(lane);
       index = files[wrap(files.indexOf(index) + direction, files.length)];
-    } else index = memory[wrap(lane + direction, 5)];
+    } else index = memory[wrap(lane + direction, archiveColumns.length)];
     const next = selectionCell(index, cell, { axis, direction });
     assert.equal(
       next[axis] - cell[axis],

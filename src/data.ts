@@ -1,4 +1,8 @@
-import content from "../content/archives.json" with { type: "json" };
+import metadata from "../content/posts.json" with { type: "json" };
+const posts = [...metadata].sort(
+  (a, b) => b.date.localeCompare(a.date) || a.slug.localeCompare(b.slug),
+);
+import { createArchiveCatalog } from "./archive-catalog.ts";
 
 export interface ArchiveRecord {
   id: string;
@@ -14,22 +18,27 @@ export interface ArchiveRecord {
   source: string;
 }
 
-export const records: ArchiveRecord[] = content.records;
-export const categories = ["全部档案", ...content.categories];
-export const archiveColumns = content.columns;
-
-export function columnFiles(lane: number) {
-  return records
-    .map((record, index) => ({ record, index }))
-    .filter(({ record }) => record.category === archiveColumns[lane])
-    .map(({ index }) => index);
-}
-export function fileLocation(index: number) {
-  const lane = archiveColumns.indexOf(records[index].category);
-  const row = 12 + columnFiles(lane).indexOf(index);
-  return { lane, row, slot: lane * 32 + row };
-}
-export function fileAtSlot(slot: number) {
-  const files = columnFiles(Math.floor(slot / 32));
-  return files[Math.max(0, Math.min(files.length - 1, (slot % 32) - 12))];
-}
+// The legacy record shape is a presentation adapter, never a second content store.
+export const records: ArchiveRecord[] = posts.map((post, index) => ({
+  id: `X-${String(index + 1).padStart(3, "0")}`,
+  title: post.title,
+  en: post.slug.toUpperCase(),
+  department: post.category,
+  category: post.category,
+  date: post.date,
+  lead: post.author,
+  clearance: "BLOG ARTICLE",
+  abstract: post.description,
+  findings: [post.description],
+  source: `#/post/${post.slug}`,
+}));
+const catalog = createArchiveCatalog(posts);
+export const archiveColumns = catalog.columns;
+export const categories = ["全部文章", ...archiveColumns];
+export const columnFiles = catalog.files;
+export const fileLocation = catalog.location;
+export const fileAtSlot = (index: number) =>
+  records.length
+    ? ((index % records.length) + records.length) % records.length
+    : -1;
+export const fileAtCoordinates = catalog.atCell;

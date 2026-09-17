@@ -6,19 +6,20 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/patch-rolling-number.mjs",
-    "predev": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && npm run check:blog",
+    "predev": "node scripts/patch-rolling-number.mjs && node --experimental-strip-types scripts/export-posts.mjs && npm run check:blog",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && node scripts/prepare-webfonts.mjs && npm run check:blog",
-    "check:content": "node --experimental-strip-types --test scripts/check-content.mjs",
+    "prebuild": "node scripts/patch-rolling-number.mjs && node --experimental-strip-types scripts/export-posts.mjs && node scripts/prepare-webfonts.mjs && npm run check:blog",
+    "check:content": "npm run check:blog && npm run check:blog-scene",
     "check:viewport": "node --experimental-strip-types scripts/check-viewport.mjs",
     "review:mobile": "node scripts/serve-mobile-review.mjs",
-    "export:archives": "node scripts/export-records.mjs",
+    "export:archives": "node --experimental-strip-types scripts/export-posts.mjs",
     "build": "tsc && vite build && node scripts/build-pwa.mjs",
     "build:cloudflare": "npm run build && node scripts/package-cloudflare.mjs",
-    "build:wallpaper": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs && tsc && vite build --mode wallpaper --outDir release/wallpaper && node scripts/build-wallpaper.mjs",
+    "build:wallpaper": "node scripts/patch-rolling-number.mjs && node --experimental-strip-types scripts/export-posts.mjs && tsc && vite build --mode wallpaper --outDir release/wallpaper && node scripts/build-wallpaper.mjs",
     "format": "prettier --write src scripts index.html package.json tsconfig.json",
     "preview": "vite preview --host 127.0.0.1",
-    "check:blog": "node --experimental-strip-types --test scripts/check-blog.mjs"
+    "check:blog": "node --experimental-strip-types --test scripts/check-blog.mjs",
+    "check:blog-scene": "node --experimental-strip-types --test scripts/check-blog-scene.mjs"
   },
   "dependencies": {
     "@kitlangton/rolling-number": "0.4.1",

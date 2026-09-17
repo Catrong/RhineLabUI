@@ -4,7 +4,7 @@
 
 - **文章索引**：分类、标签、正文搜索、排序、分页和本机收藏，筛选条件可分享。
 - **长文阅读**：Markdown、章节目录、阅读进度、字号与专注模式，支持代码、表格、图片及手机横竖屏。
-- **原有动画**：启动、玻璃阵列、抽取与归位继续保留；导航中的「三维档案」可体验完整原交互。
+- **原有动画**：启动、玻璃阵列、抽取与归位继续保留；导航中的「三维书架」可体验完整原交互。
 - **内容独立**：编辑 `content/posts.json` 和 `content/posts/*.md`，文章数量与分类数量不受原阵列限制。附带 6 篇可替换示例。
 
 ```sh
@@ -240,7 +240,7 @@ npm run preview
 | [`src/decryption.ts`](src/decryption.ts)、[`src/document-decryption.ts`](src/document-decryption.ts) | 模型解密轨迹与正文同步揭示 |
 | [`src/audio.ts`](src/audio.ts)、[`public/audio/`](public/audio/) | 交互音效、三轨配乐与音源记录 |
 | [`src/render-quality.ts`](src/render-quality.ts)、[`src/quality-renderer.ts`](src/quality-renderer.ts) | 画质预设与渲染管线 |
-| [`content/archives.json`](content/archives.json) | 页面与下载共用的五类、40 份档案数据 |
+| [`content/posts.json`](content/posts.json) | 博客与三维书架共用的文章元信息，分类和篇数不限 |
 | [`src/data.ts`](src/data.ts) | 档案类型与阵列位置映射 |
 | [`public/assets/`](public/assets/) | 运行所需的 GLB 模型 |
 | [`public/archives/`](public/archives/) | 导出的档案文本；启动和构建前自动生成 |
@@ -254,7 +254,7 @@ npm run preview
 
 ### 修改与复核
 
-修改档案内容从 [`content/archives.json`](content/archives.json) 入手，字段与操作步骤见 [档案修改说明](content/README.md)。`npm run dev` 与 `npm run build` 会先校验数据，再更新 `public/archives/` 中的文本导出；开发过程中修改数据后，可执行 `npm run export:archives` 同步下载文件。`npm run check:content` 检查数据规则与导出一致性。
+修改文章从 [`content/posts.json`](content/posts.json) 和 `content/posts/*.md` 入手，见 [内容维护说明](content/README.md)。开发与构建前自动校验并导出 Markdown；`npm run export:archives` 同步原文下载，`npm run check:content` 验证内容、分类映射和抽页时间轴。交互书架固定复用 288 个位置，开场参考对照仍为 160 个位置。
 
 ```sh
 node scripts/check-motion.mjs

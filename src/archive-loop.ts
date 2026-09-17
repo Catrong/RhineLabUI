@@ -1,4 +1,9 @@
-import { archiveColumns, columnFiles, fileLocation } from "./data.ts";
+import {
+  archiveColumns,
+  columnFiles,
+  fileLocation,
+  fileAtCoordinates,
+} from "./data.ts";
 
 export type ArchiveCell = { lane: number; row: number };
 export type ArchiveNavigation =
@@ -11,7 +16,7 @@ export const ROW_SPACING = 0.62;
 const POOL_LANES = [0, 1, 2, 3, 4, -2, -1, 5, 6];
 
 export function wrap(value: number, count: number) {
-  return ((value % count) + count) % count;
+  return count > 0 ? ((value % count) + count) % count : 0;
 }
 
 // Choose an occurrence of an item in an unbounded sequence. Directional moves
@@ -21,12 +26,13 @@ export function nearestOccurrence(
   center: number,
   period: number,
 ) {
-  return value + Math.floor((center - value + period / 2) / period) * period;
+  return period > 0
+    ? value + Math.floor((center - value + period / 2) / period) * period
+    : value;
 }
 
 export function fileAtCell({ lane, row }: ArchiveCell) {
-  const files = columnFiles(wrap(lane, archiveColumns.length));
-  return files[wrap(row - 12, files.length)];
+  return fileAtCoordinates(lane, row);
 }
 
 export function selectionCell(

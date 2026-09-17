@@ -1,3 +1,4 @@
+import { posts } from "./posts";
 import { BlogApp } from "./blog";
 let blog: BlogApp | undefined;
 import { createRollingClock } from "./rolling-clock";
@@ -56,7 +57,7 @@ $("#stage").innerHTML = `
   <div id="boot-background" class="boot-background"><svg viewBox="0 0 1920 1080" preserveAspectRatio="none"><g fill="none" stroke="#fff" stroke-width="3"><path d="M-210 705C-45 705 182 704 247 567C337 377 99 306 4 435S27 680 169 631C309 584 227 314 279 111S568-113 568-113"/><path d="M1560-80C1374 114 1671 168 1601 323S1371 367 1431 480S1692 666 1559 787S1329 886 1498 1130"/><circle cx="1450" cy="648" r="346"/><circle cx="1450" cy="648" r="348"/></g></svg></div>
   <header class="brand">${brandHeading}</header>
   <nav class="system-nav" aria-label="系统导航">
-    <button data-action="search"><span class="nav-glyph">⌕</span> ARCHIVE INDEX <span class="key">/</span></button>
+    <button data-action="search"><span class="nav-glyph">⌕</span> BLOG INDEX <span class="key">/</span></button>
     <button data-action="saved" aria-label="查看收藏档案" title="收藏档案">＋ SAVED <span id="saved-count">00</span></button>
     <button class="settings-button" data-action="settings" aria-label="系统设置" title="系统设置"><span class="settings-glyph" aria-hidden="true">◷</span><span class="settings-label">设置</span></button>
   </nav>
@@ -71,12 +72,12 @@ $("#stage").innerHTML = `
   <svg id="inspection-marks" viewBox="0 0 1920 1080" aria-hidden="true"><path id="inspection-lines"/><g id="inspection-corners"></g><circle id="inspection-point" r="1.8"/></svg>
   <div id="inspection-text" aria-hidden="true">CONFIDENTIALITY:<strong>GENERAL BUSINESS USE</strong></div>
   <section id="archive-ui" class="archive-ui" aria-label="档案选择">
-    <div class="archive-callout"><div class="eyebrow">INTERNAL DATABASE <span>／</span> <span id="archive-category">机构档案</span></div><button class="file-title" data-action="open">FILE NUMBER: <span id="selected-id">X-<span id="selected-code">001</span></span><span class="file-open">↗</span></button><div class="callout-rule"><i></i></div><div class="file-summary"><span id="selected-title">莱茵生命</span><span id="selected-clearance">BUSINESS AREA</span></div><button class="read-file" data-action="open">ACCESS FILE <span>→</span></button></div>
+    <div class="archive-callout"><div class="eyebrow">INTERNAL DATABASE <span>／</span> <span id="archive-category">机构档案</span></div><button class="file-title" data-action="open">FILE NUMBER: <span id="selected-id">X-<span id="selected-code">001</span></span><span class="file-open">↗</span></button><div class="callout-rule"><i></i></div><div class="file-summary"><span id="selected-title">莱茵生命</span><span id="selected-clearance">BUSINESS AREA</span></div><button class="read-file" data-action="open">READ ARTICLE <span>→</span></button></div>
     <div id="hover-label" class="hover-label" hidden>X-<span id="hover-code">001</span> / <span id="hover-title"></span></div>
     <div class="archive-counter"><span class="tiny-label">ARCHIVE / SELECT</span><div><span id="selected-number">01</span><i>/</i><span class="count-total">12</span></div></div>
     <div class="archive-navigation"><button data-action="prev" aria-label="上一个档案">↑</button><div id="file-ticks" class="file-ticks"></div><button data-action="next" aria-label="下一个档案">↓</button></div>
-    <div class="column-navigation"><button data-action="column-prev" aria-label="上一列">←</button><div><span id="column-number">COLUMN <span id="column-index">03</span> / 05</span><strong id="column-name">机构档案</strong></div><button data-action="column-next" aria-label="下一列">→</button></div>
-    <div class="archive-hint"><kbd>←</kbd> <kbd>→</kbd> 切换列 <span>／</span> <kbd>↑</kbd> <kbd>↓</kbd> 前后档案 <span>／</span> <kbd>ENTER</kbd> 读取</div>
+    <div class="column-navigation"><button data-action="column-prev" aria-label="上一列">←</button><div><span id="column-number">CATEGORY <span id="column-index">01</span> / <span id="column-total"></span></span><strong id="column-name">机构档案</strong></div><button data-action="column-next" aria-label="下一列">→</button></div>
+    <div class="archive-hint"><kbd>←</kbd> <kbd>→</kbd> 切换分类 <span>／</span> <kbd>↑</kbd> <kbd>↓</kbd> 前后文章 <span>／</span> <kbd>ENTER</kbd> 读取</div>
   </section>
   <section id="detail-ui" class="detail-ui" aria-label="档案内容" hidden>
     <button class="back-button" data-action="back">← <span>ARCHIVE OVERVIEW</span><small>ESC</small></button>
@@ -105,7 +106,7 @@ let mode: Mode = "boot",
   ready = false;
 let modal: "search" | "saved" | "settings" | null = null,
   searchQuery = "",
-  filter = "全部档案";
+  filter = "全部文章";
 let activeTab = "overview";
 const reviewParams = new URLSearchParams(location.search);
 let frozenTime =
@@ -238,6 +239,7 @@ let viewer: ModelViewer | undefined;
 const accessLog: { id: string; time: string }[] = [];
 const columnMemory = archiveColumns.map((_, lane) => columnFiles(lane)[0]);
 function recordAccess() {
+  if (!records[selected]) return;
   accessLog.unshift({
     id: records[selected].id,
     time: new Date().toLocaleTimeString("en-GB"),
@@ -330,7 +332,7 @@ $("#file-ticks").innerHTML = columnFiles(fileLocation(selected).lane)
     (index) => `<button data-select="${index}"></button>`,
   )
   .join("");
-const fileTicks = [...$("#file-ticks").querySelectorAll<HTMLButtonElement>("button")];
+let fileTicks = [...$("#file-ticks").querySelectorAll<HTMLButtonElement>("button")];
 
 function setMode(next: Mode) {
   if (workbench?.enabled && next === "detail") next = "archive";
@@ -386,6 +388,7 @@ function setMode(next: Mode) {
   blog?.syncMode(next);
 }
 function select(index: number, navigation?: ArchiveNavigation) {
+  if (!records.length || index < 0) return;
   selected = (index + records.length) % records.length;
   columnMemory[fileLocation(selected).lane] = selected;
   if (mode === "detail") setMode("archive");
@@ -404,12 +407,26 @@ function stepFile(direction: number) {
   );
 }
 function stepColumn(direction: number) {
+  if (!archiveColumns.length) return;
   const lane = fileLocation(selected).lane;
   const next = wrap(lane + direction, archiveColumns.length);
   select(columnMemory[next], { axis: "lane", direction });
 }
 function updateSelection(navigation?: ArchiveNavigation) {
+  $("#column-total").textContent = String(archiveColumns.length).padStart(2,"0");
   const r = records[selected];
+  if (!r) {
+    selectionTitle.update({text:"暂无文章"});
+    categoryTitle.update({text:"暂无分类",animated:false});
+    columnTitle.update({text:"暂无分类",animated:false});
+    clearanceTitle.update({text:"BLOG ARTICLE",animated:false});
+    fileCounter.update({value:0,animated:false});
+    columnCounter.update({value:0,animated:false});
+    selectedCode.update({value:0,animated:false});
+    $(".count-total").textContent="00";
+    document.querySelectorAll<HTMLButtonElement>('#archive-ui button').forEach(button=>button.disabled=true);
+    return;
+  }
   const { lane } = fileLocation(selected);
   const files = columnFiles(lane);
   selectionTitle.update({ text: r.title, animated: !prefs.reduced && mode === "archive" });
@@ -446,15 +463,21 @@ function updateSelection(navigation?: ArchiveNavigation) {
   columnTitle.update({ text: archiveColumns[lane], animated: !prefs.reduced && mode === "archive" });
   $<HTMLButtonElement>('[data-action="column-prev"]').disabled = false;
   $<HTMLButtonElement>('[data-action="column-next"]').disabled = false;
+  const row = files.indexOf(selected);
+  const tickFiles = files.length <= 8 ? files : Array.from({length:8},(_,i)=>files[wrap(row-3+i,files.length)]);
+  if (fileTicks.length !== tickFiles.length) {
+    $("#file-ticks").innerHTML=tickFiles.map(()=>'<button></button>').join('');
+    fileTicks=[...$("#file-ticks").querySelectorAll<HTMLButtonElement>("button")];
+  }
   fileTicks.forEach((button, slot) => {
-    const index = files[slot], record = records[index];
-    button.dataset.select = String(index);
-    button.setAttribute("aria-label", `选择档案 ${record.id} ${record.title}`);
-    button.title = `${record.id} · ${record.title}`;
-    button.classList.toggle("selected", index === selected);
-    button.setAttribute("aria-pressed", String(index === selected));
+    const index=tickFiles[slot], record=records[index];
+    button.dataset.select=String(index);
+    button.setAttribute("aria-label",`选择文章 ${record.title}`);
+    button.title=`${files.indexOf(index)+1} / ${files.length} · ${record.title}`;
+    button.classList.toggle("selected",index===selected);
+    button.setAttribute("aria-pressed",String(index===selected));
   });
-  $("#saved-count").textContent = String(saved.size).padStart(2, "0");
+  $("#saved-count").textContent = String(blog?.savedCount ?? saved.size).padStart(2, "0");
 }
 function replayBoot(forcePreview = false) {
   if (!ready) return;
@@ -472,7 +495,8 @@ function replayBootAfterModal(forcePreview: boolean) {
   if (!forcePreview) audio.play("ui-tick");
 }
 function openFile() {
-  if (!ready) return;
+  if (!ready || !records[selected]) return;
+  if (blog) { closeModal(() => blog!.openArticle(selected)); return; }
   closeModal(() => {
     setMode("detail");
     audio.play("open");
@@ -485,7 +509,7 @@ function toggleSaved() {
   try {
     localStorage.setItem("rhine-saved", JSON.stringify([...saved]));
   } catch {}
-  $("#saved-count").textContent = String(saved.size).padStart(2, "0");
+  $("#saved-count").textContent = String(blog?.savedCount ?? saved.size).padStart(2, "0");
   const button = $<HTMLButtonElement>('[data-action="bookmark"]');
   const added = saved.has(id);
   button.firstChild!.textContent = added ? "− REMOVE FROM SAVED" : "＋ SAVE ARCHIVE";
@@ -500,6 +524,7 @@ function toggleSaved() {
   notify(saved.has(id) ? "档案已加入收藏" : "已取消收藏");
 }
 function renderDetail() {
+  if (!records[selected]) return;
   tabTransition.cancel();
   const r = records[selected];
   $("#object-id").textContent = "NO." + String(selected + 1).padStart(3, "0");
@@ -510,7 +535,7 @@ function renderDetail() {
   <dl class="metadata"><div><dt>DEPARTMENT / 科室</dt><dd>${escapeHtml(r.department)}</dd></div><div><dt>COLLECTION / 编目范围</dt><dd>${escapeHtml(r.date)}</dd></div><div><dt>RELATED / 相关人物</dt><dd>${escapeHtml(r.lead)}</dd></div><div><dt>STATUS / 状态</dt><dd><i></i>${r.clearance === "RESTRICTED" ? "目录访问" : "已归档 · 可读取"}</dd></div></dl>
   <div class="detail-tabs" role="tablist"><button id="tab-overview" class="active" role="tab" aria-controls="tab-panel" aria-selected="true" data-tab="overview">01 <span>概述</span></button><button id="tab-notes" role="tab" aria-controls="tab-panel" aria-selected="false" data-tab="notes">02 <span>研究记录</span></button><button id="tab-history" role="tab" aria-controls="tab-panel" aria-selected="false" data-tab="history">03 <span>访问日志</span></button><i class="tab-indicator" aria-hidden="true"></i></div>
   <div id="tab-panel" class="tab-panel" role="tabpanel">${overview()}</div>
-  <div class="detail-actions"><button class="solid-button" data-action="bookmark">${saved.has(r.id) ? "− REMOVE FROM SAVED" : "＋ SAVE ARCHIVE"}<span>${saved.has(r.id) ? "已收藏" : "收藏档案"}</span></button><a class="export-button" href="${assetUrl(`archives/RHINE-LAB-${r.id}.txt`)}" download="RHINE-LAB-${r.id}.txt" aria-label="导出 ${r.id} 档案">EXPORT <span>↓</span></a></div>
+  <div class="detail-actions"><button class="solid-button" data-action="bookmark">${saved.has(r.id) ? "− REMOVE FROM SAVED" : "＋ SAVE ARCHIVE"}<span>${saved.has(r.id) ? "已收藏" : "收藏档案"}</span></button><a class="export-button" href="${assetUrl(`archives/${posts[selected]?.slug}.md`)}" download="${posts[selected]?.slug}.md" aria-label="导出 ${r.id} 档案">EXPORT <span>↓</span></a></div>
   <div class="detail-footnote"><a href="${escapeHtml(r.source)}" target="_blank" rel="noopener">设定参考 ↗</a><span>${String(selected + 1).padStart(3, "0")} / ${String(records.length).padStart(3, "0")}</span></div>`;
   $("#detail-content").setAttribute("tabindex", "-1");
   $('[data-action="bookmark"]').setAttribute("aria-pressed", String(saved.has(r.id)));
@@ -576,7 +601,7 @@ function openModal(kind: NonNullable<typeof modal>) {
   modalClosing = false;
   modal = kind;
   searchQuery = "";
-  filter = "全部档案";
+  filter = "全部文章";
   audio.play("page-open");
   renderModal();
 }
@@ -605,7 +630,7 @@ function renderModal() {
   if (!modal) return;
   modalTransition?.dispose();
   $("#modal-root").innerHTML =
-    `<div class="modal-backdrop"><section class="terminal-modal ${modal === "settings" ? "settings-modal" : ""}" role="dialog" aria-modal="true" aria-label="${modal === "settings" ? "系统设置" : modal === "saved" ? "收藏档案" : "档案检索"}"><div class="modal-top"><span>RHINE LAB / ${modal === "settings" ? "SYSTEM PREFERENCES" : "ARCHIVE DIRECTORY"}</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div>${modal === "settings" ? settingsMarkup() : `<h2>${modal === "saved" ? "SAVED ARCHIVES" : "ARCHIVE INDEX"}<small>${modal === "saved" ? "收藏档案" : "内部档案检索"}</small></h2><div class="search-field"><span>⌕</span><input id="archive-search" type="search" autocomplete="off" placeholder="输入档案编号、名称或科室" aria-label="检索档案"/><span class="key">ESC</span></div><div class="category-filters">${categories.map((c, i) => `<button data-filter="${escapeHtml(c)}" class="${i === 0 ? "active" : ""}">${escapeHtml(c)}</button>`).join("")}</div><div class="result-header"><span>FILE / 档案</span><span>DEPARTMENT / 科室</span><span>ACCESS</span></div><div id="search-results" class="search-results"></div><div class="modal-bottom"><span id="result-count"></span><span>INTERNAL DATABASE <i>●</i> CONNECTED</span></div>`}</section></div>`;
+    `<div class="modal-backdrop"><section class="terminal-modal ${modal === "settings" ? "settings-modal" : ""}" role="dialog" aria-modal="true" aria-label="${modal === "settings" ? "系统设置" : modal === "saved" ? "收藏档案" : "档案检索"}"><div class="modal-top"><span>RHINE LAB / ${modal === "settings" ? "SYSTEM PREFERENCES" : "ARCHIVE DIRECTORY"}</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div>${modal === "settings" ? settingsMarkup() : `<h2>${modal === "saved" ? "SAVED ARCHIVES" : "BLOG INDEX"}<small>${modal === "saved" ? "收藏档案" : "内部档案检索"}</small></h2><div class="search-field"><span>⌕</span><input id="archive-search" type="search" autocomplete="off" placeholder="输入档案编号、名称或科室" aria-label="检索档案"/><span class="key">ESC</span></div><div class="category-filters">${categories.map((c, i) => `<button data-filter="${escapeHtml(c)}" class="${i === 0 ? "active" : ""}">${escapeHtml(c)}</button>`).join("")}</div><div class="result-header"><span>FILE / 档案</span><span>DEPARTMENT / 科室</span><span>ACCESS</span></div><div id="search-results" class="search-results"></div><div class="modal-bottom"><span id="result-count"></span><span>INTERNAL DATABASE <i>●</i> CONNECTED</span></div>`}</section></div>`;
   const backdrop = $(".modal-backdrop");
   backdrop.hidden = true;
   modalTransition = new SurfaceTransition(backdrop, $(".terminal-modal"));
@@ -630,10 +655,10 @@ function renderResults() {
   const results = records
     .map((r, i) => ({ r, i }))
     .filter(
-      ({ r }) =>
+      ({ r, i }) =>
         (modal !== "saved" || saved.has(r.id)) &&
-        (filter === "全部档案" || r.category === filter) &&
-        `${r.id} ${r.title} ${r.en} ${r.department} ${r.lead}`
+        (filter === "全部文章" || r.category === filter) &&
+        `${r.id} ${r.title} ${r.en} ${r.department} ${r.lead} ${posts[i]?.markdown ?? ""}`
           .toLowerCase()
           .includes(searchQuery.toLowerCase()),
     );
@@ -770,6 +795,7 @@ document.addEventListener("click", (e) => {
     setMode("archive");
     audio.play("back");
   }
+  if (action === "saved" && blog) { blog.openSaved(); return; }
   if (action === "search" || action === "saved" || action === "settings") {
     el.focus({ preventScroll: true });
     openModal(action);
@@ -779,7 +805,7 @@ document.addEventListener("click", (e) => {
   if (action === "reset-search") {
     modal = "search";
     searchQuery = "";
-    filter = "全部档案";
+    filter = "全部文章";
     renderModal();
   }
   if (action === "replay" || action === "restart") {
@@ -1004,7 +1030,7 @@ function bindScene(scene: ArchiveScene, cell?: { lane: number; row: number }) {
     };
     scene.onHover = (i) => {
       const label = $("#hover-label");
-      if (i === null) {
+      if (i === null || i < 0 || !records[i]) {
         label.hidden = true;
         hoverCode.finish();
         hoverTitle.finish();
@@ -1220,7 +1246,7 @@ if (isWallpaper) {
   workbench = new Workbench($("#stage"), () => {
     if (ready && mode !== "boot") setMode("archive");
   }, lane => {
-    if (ready && !modal) select(columnMemory[lane]);
+    if (ready && !modal && columnMemory.length) select(columnMemory[wrap(lane,columnMemory.length)]);
   });
   playground = new ArchivePlayground($("#stage"), () => scene,
     () => ({ enabled: !!workbench?.enabled && mode === "archive" && ready, paused: Boolean(modal) || modalClosing || Boolean(wallpaperHost()?.paused) || document.hidden, reduced: prefs.reduced }),
@@ -1231,18 +1257,24 @@ if (isWallpaper) {
     if (button) closeModal(() => { workbench!.setEnabled(button.dataset.workbenchMode === "workbench"); });
   });
 }
+let articleRequest=0;
 if (!isWallpaper && !reviewEntry) {
   blog = new BlogApp({
-    article: index => {
-      if (!ready) return;
-      closeModal(() => {
-        select(index % records.length);
-        setMode("detail");
-        pendingDetailFocus = false;
-        audio.play("open");
-      });
+    article: async (index, destination) => {
+      const request=++articleRequest;
+      if (!ready || !posts[index]) return false;
+      await scene?.cancelArticle();
+      if(request!==articleRequest)return false;
+      select(index);
+      setMode("detail");
+      pendingDetailFocus = false;
+      audio.play("open");
+      return scene ? scene.playArticle(posts[index], destination) : true;
     },
-    home: () => { if (ready) closeModal(() => setMode("archive")); },
+    home: () => {
+      const request=++articleRequest;
+      void (async () => { await scene?.cancelArticle(); if (ready && request===articleRequest) closeModal(() => setMode("archive")); })();
+    },
     replay: () => replayBoot(),
     theme: () => { prefs.colorTheme = prefs.colorTheme === "dark" ? "light" : "dark"; savePrefs(); if (!scene) paintTheme(prefs.colorTheme === "dark" ? 1 : 0); },
     reduced: () => prefs.reduced,
@@ -1285,7 +1317,8 @@ Object.assign(window, {
       startup: started ? "started" : entry?.phase ?? "loading",
       motion: { reduced: prefs.reduced, systemReduced: matchMedia("(prefers-reduced-motion: reduce)").matches },
       bootTime: mode === "boot" ? started ? (frozenTime ?? performance.now() / 1000 - bootStart) + 5 : 6.76 : null,
-      selected: records[selected].id,
+      selected: records[selected]?.id ?? null,
+      post: posts[selected]?.slug ?? null,
       saved: [...saved],
       audio: audio.stats(),
       wallpaper: isWallpaper ? wallpaperHost() : null,
