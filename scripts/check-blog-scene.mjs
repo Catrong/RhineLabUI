@@ -270,3 +270,66 @@ test("sharp title pass preserves scene color and restores renderer state", async
   assert.equal(currentTarget, target);
   pass.dispose();
 });
+
+
+test("physical pool moves in complete rows with cached topology at arbitrary speeds", async () => {
+  const { ArchiveWindow } = await import("../src/archive-arrival.ts");
+  const window = new ArchiveWindow();
+  for (const center of [{lane:2,row:12},{lane:-120.4,row:901.2},{lane:8000.7,row:-92000.3}]) {
+    const rows = window.update(center);
+    assert.equal(rows.length, LOOP_ROWS);
+    assert.ok(rows.every(row => row.length === LOOP_COLUMNS && row.every(c => c.row === row[0].row)));
+    assert.equal(new Set(window.cells.map(c => `${c.lane}:${c.row}`)).size, LOOP_ROWS * LOOP_COLUMNS);
+    assert.deepEqual(new Set(window.cells.map(c=>`${c.lane}:${c.row}`)),new Set(Array.from({length:LOOP_ROWS*LOOP_COLUMNS},(_,i)=>{const c=visibleCell(i,center);return `${c.lane}:${c.row}`;})));
+    assert.equal(window.update(center), rows, "unchanged pool reuses all cell objects");
+  }
+});
+
+test("new row members fade together while retained and rebased cells stay visible", async () => {
+  const { ArchiveArrival } = await import("../src/archive-arrival.ts");
+  const arrival = new ArchiveArrival(), origin = {lane:0,row:0};
+  const row = n => Array.from({length:9},(_,lane)=>({lane,row:n}));
+  const sample = (cells, time, immediate=false, offset=origin) => {
+    arrival.begin(); const values=cells.map(c=>arrival.sample(c,time,immediate,offset));arrival.end();return values;
+  };
+  assert.ok(sample(row(1),0).every(v=>v===1));
+  assert.deepEqual(sample([...row(1),...row(2)],1), [...Array(9).fill(1),...Array(9).fill(0)]);
+  const middle=sample([...row(1),...row(2)],1.11);
+  assert.ok(middle.slice(0,9).every(v=>v===1));
+  assert.ok(middle.slice(9).every(v=>Math.abs(v-.5)<1e-8));
+  assert.ok(sample(row(2).map(c=>({...c,lane:c.lane-3000})),1.3,false,{lane:3000,row:0}).every(v=>v===1));
+  assert.ok(sample(row(99),1.31,true).every(v=>v===1));
+  assert.ok(sample(row(2),1.32).every(v=>v===0), "recycled row restarts on re-entry");
+});
+
+test("arrival shader covers beauty, normal, depth and keeps dynamic cache keys", async () => {
+  const { archiveArrivalMaterial } = await import("../src/archive-arrival.ts");
+  const THREE = await import("three");
+  for(const type of ["physical","normal","depth"]) {
+    const material=new THREE.MeshPhysicalMaterial(); let variant=0;
+    material.customProgramCacheKey=()=>`variant-${variant}`;
+    archiveArrivalMaterial(material);
+    const first=material.customProgramCacheKey();variant++;
+    assert.notEqual(material.customProgramCacheKey(),first);
+    const shader={vertexShader:THREE.ShaderLib[type].vertexShader,fragmentShader:THREE.ShaderLib[type].fragmentShader,uniforms:{}};
+    material.onBeforeCompile(shader,{});
+    assert.ok(shader.vertexShader.includes("vArchivePresence = 1.0"));
+    assert.ok(shader.vertexShader.includes("vArchivePresence = archivePresence"));
+    assert.ok(shader.fragmentShader.includes("if (vArchivePresence <= archiveCoverage) discard;"));
+    assert.ok(!shader.fragmentShader.includes("#ifdef USE_INSTANCING"),"Three defines instancing only in vertex prefix");
+    material.dispose();
+  }
+});
+
+test("frustum-only preparation matches full visibility without generating a second pool", async () => {
+  const { ArchiveVisibility } = await import("../src/archive-visibility.ts");
+  const THREE=await import("three");
+  const camera=new THREE.PerspectiveCamera(6,16/9,5,300);
+  camera.position.set(-62,36,43);camera.lookAt(0,0,0);camera.updateMatrixWorld();
+  const full=new ArchiveVisibility(),fast=new ArchiveVisibility();
+  assert.ok(full.update(camera,100,0,0,false).length>0);
+  assert.equal(fast.update(camera,100,0,0,false,true).length,0);
+  for(let x=-25;x<=25;x+=5)for(let z=-15;z<=15;z+=.62)
+    assert.equal(fast.intersects(x,-4.6,z),full.intersects(x,-4.6,z));
+  assert.equal(fast.intersectsRow(-20,20,-4.6,-4.6,0),true);
+});

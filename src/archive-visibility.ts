@@ -11,9 +11,9 @@ export class ArchiveVisibility {
   candidates = 0;
   private previous: number[] = [];
   private cachedCells: ArchiveCell[] = [];
-  update(source: THREE.PerspectiveCamera, far: number, trackX: number, trackZ: number, extra: boolean): ArchiveCell[] {
+  update(source: THREE.PerspectiveCamera, far: number, trackX: number, trackZ: number, extra: boolean, frustumOnly = false): ArchiveCell[] {
     const inputs = [...source.projectionMatrix.elements, ...source.matrixWorldInverse.elements,
-      source.near, source.far, far, trackX, trackZ, Number(extra)];
+      source.near, source.far, far, frustumOnly ? 0 : trackX, frustumOnly ? 0 : trackZ, Number(extra), Number(frustumOnly)];
     if (inputs.every((value, i) => value === this.previous[i])) return this.cachedCells;
     this.previous = inputs;
     this.camera.copy(source, false);
@@ -27,6 +27,7 @@ export class ArchiveVisibility {
     this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
     this.matrix.multiplyMatrices(this.camera.projectionMatrix, source.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.matrix);
+    if (frustumOnly) return this.cachedCells = [];
     const inverse = this.matrix.clone().invert();
     const vertices = Array.from({length:8},(_,i)=>new THREE.Vector3(i&1?1:-1,i&2?1:-1,i&4?1:-1).applyMatrix4(inverse));
     const slab = new THREE.Box3();
@@ -52,6 +53,11 @@ export class ArchiveVisibility {
     }
     this.candidates=cells.length;
     return this.cachedCells = cells;
+  }
+  intersectsRow(minX: number, maxX: number, minY: number, maxY: number, z: number) {
+    this.box.min.set(minX - 2.8, minY - .3, z - 1.2);
+    this.box.max.set(maxX + 2.8, maxY + 4.1, z + 1.2);
+    return this.frustum.intersectsBox(this.box);
   }
   intersects(x: number, y: number, z: number) {
     // Conservative over the subtle x-axis lean and normal wave amplitude.

@@ -1,3 +1,4 @@
+import { archiveArrivalMaterial } from "./archive-arrival";
 import * as THREE from 'three';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { BokehPass, type BokehPassParameters } from 'three/addons/postprocessing/BokehPass.js';
@@ -25,6 +26,7 @@ export class SharedDepthAO extends SSAOPass {
       shader.fragmentShader = shader.fragmentShader.replace('void main() {', 'void main() {\narchivePackedDepth = packDepthToRGBA(0.5 * vArchiveZW.x / vArchiveZW.y + 0.5);');
     };
     this.normalMaterial.customProgramCacheKey = () => `archive-normal-packed-depth-v1-${this.sharing}`;
+    archiveArrivalMaterial(this.normalMaterial);
   }
   setSharing(enabled: boolean) {
     if (enabled === this.sharing) return;
@@ -62,6 +64,7 @@ export class SharedDepthBokeh extends BokehPass {
   constructor(scene: THREE.Scene, camera: THREE.Camera, params: BokehPassParameters, private source: () => SharedDepthAO) {
     super(scene, camera, params);
     this.quad = new FullScreenQuad(this.materialBokeh);
+    archiveArrivalMaterial((this as unknown as { _materialDepth: THREE.Material })._materialDepth);
   }
   setSize(width: number, height: number) { super.setSize(width, height); this.width = width; this.height = height; }
   render(renderer: THREE.WebGLRenderer, write: THREE.WebGLRenderTarget, read: THREE.WebGLRenderTarget, delta: number, mask: boolean) {

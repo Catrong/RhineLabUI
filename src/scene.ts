@@ -1,3 +1,4 @@
+import { ArchiveWindow, ArchiveArrival, archiveArrivalMaterial } from "./archive-arrival";
 import { SharpTitleRenderer } from "./sharp-title-renderer";
 import { ArchiveHoverTitle } from "./archive-hover-title";
 import { categoryColor } from "./category-color";
@@ -32,7 +33,6 @@ import {
   selectionCell,
   fileAtCell,
   poolCell,
-  visibleCell,
   LOOP_COLUMNS,
   LOOP_ROWS,
   COLUMN_SPACING,
@@ -92,6 +92,7 @@ export class ArchiveScene {
     this.cancelPointer();
     this.hoverTitle.dispose();
     this.sharpTitle.dispose();
+    this.arrivalDepth.dispose();
     disposeThreeTree(this.scene);
     this.appearance.disposeSources();
     this.model.clear();
@@ -198,6 +199,13 @@ export class ArchiveScene {
   private renderedFrames = 0;
   private reusedFrames = 0;
   private visibility = new ArchiveVisibility();
+  private archiveWindow = new ArchiveWindow();
+  private rowPositions = new Float64Array(LOOP_COLUMNS * LOOP_ROWS * 3);
+  private arrival = new ArchiveArrival();
+  private arrivalAttribute?: THREE.InstancedBufferAttribute;
+  private arrivalUpdates?: InstanceUpdates;
+  private arrivalDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  private fixedCells = Array.from({length:160}, (_,i)=>poolCell(i));
   private instanceCapacity = LOOP_COLUMNS * LOOP_ROWS;
   private drawnCells: ArchiveCell[] = [];
   private extraCoverage = false;
@@ -301,6 +309,7 @@ export class ArchiveScene {
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.addEventListener('webglcontextrestored', () => this.renderState.invalidate(), { signal: this.inputEvents.signal });
     this.hoverTitle.mesh.material.map!.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
+    archiveArrivalMaterial(this.arrivalDepth);
     this.scene.add(this.hoverTitle.mesh);
     this.scene.background = new THREE.Color("#eae5e1");
     // The frame updates world matrices once after simulation; subsequent
@@ -492,9 +501,13 @@ export class ArchiveScene {
         this.categoryUpdates=new InstanceUpdates(this.categoryAttribute);
       }
       themeMaterial(arrayMat, name, true, this.subduedIndex);
+      archiveArrivalMaterial(arrayMat);
+      this.arrivalAttribute ??= new THREE.InstancedBufferAttribute(new Float32Array(count).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
+      geom.setAttribute("archivePresence", this.arrivalAttribute);
       const inst = new THREE.InstancedMesh(geom, arrayMat, count);
       // All surfaces move rigidly together; share the transform buffer on the GPU.
       inst.instanceMatrix = this.instances[0]?.instanceMatrix ?? inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      inst.customDepthMaterial = this.arrivalDepth;
       inst.castShadow = name === "Optical_Diffuser";
       inst.receiveShadow = true;
       inst.frustumCulled = false;
@@ -1036,6 +1049,12 @@ export class ArchiveScene {
       inst.dispose();
       inst.instanceMatrix = matrix;
     }
+    if(this.arrivalAttribute) {
+      const attribute = new THREE.InstancedBufferAttribute(new Float32Array(capacity).fill(1), 1).setUsage(THREE.DynamicDrawUsage);
+      attribute.array.set(this.arrivalAttribute.array);
+      this.arrivalAttribute = attribute; this.arrivalUpdates = new InstanceUpdates(attribute);
+      for(const inst of this.instances)inst.geometry.setAttribute("archivePresence", attribute);
+    }
     const previousTheme = this.themeAttribute;
     this.themeAttribute = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
     if (previousTheme) this.themeAttribute.array.set(previousTheme.array);
@@ -1120,7 +1139,7 @@ export class ArchiveScene {
     const hit = this.raycaster.intersectObjects(
       [this.instances[0], this.model, ...this.outgoing.map((o) => o.group)],
       true,
-    )[0];
+    ).find(hit => hit.instanceId === undefined || (this.arrivalAttribute?.getX(hit.instanceId) ?? 1) > .05);
     if (!hit) return null;
     if (hit.instanceId !== undefined) return { ...this.drawnCells[hit.instanceId] };
     let object: THREE.Object3D | null = hit.object;
@@ -1551,7 +1570,7 @@ export class ArchiveScene {
       spectrumPoint.set((lane - 2) * COLUMN_SPACING - trackX, -4.6, (row - 15.5) * ROW_SPACING + this.rail.value).project(this.camera);
       return (spectrumPoint.x + 1) / 2;
     };
-    const field = (row: number, lane: number) => {
+    const computeField = (row: number, lane: number) => {
       if (cinematic)
         return cinematicField(
           row,
@@ -1560,14 +1579,14 @@ export class ArchiveScene {
           this.shoulder.value,
           this.laneFocus.value,
         );
-      const height =
+      const height = this.scanBlend === 0 ? 0 :
         archiveWave(
           row + this.coordinateOrigin.row,
           lane + this.coordinateOrigin.lane,
           this.scanTime,
         ) *
           this.scanBlend;
-      const breathing = idleWave(
+      const breathing = this.idleGain === 0 ? 0 : idleWave(
           row + this.coordinateOrigin.row,
           lane + this.coordinateOrigin.lane,
           time,
@@ -1593,6 +1612,13 @@ export class ArchiveScene {
         (activePlay && !this.reduced ? rhythmDisplacement(row, lane, time, play.bands, play.strength, rhythm, screenX(row, lane)) : 0) +
         (this.relayLifts.get(cellKey({ row, lane })) ?? 0)
       );
+    };
+    const fieldCache = new Map<number, Map<number, number>>();
+    const field = (row: number, lane: number) => {
+      let column = fieldCache.get(lane);
+      if (!column) fieldCache.set(lane, column = new Map());
+      if (!column.has(row)) column.set(row, computeField(row, lane));
+      return column.get(row)!;
     };
     const selectedBase = chosen.y + field(selectedRow, selectedLane);
     if (!cinematic) {
@@ -1888,35 +1914,55 @@ export class ArchiveScene {
     // Build and compact the instance set only after the actual damped camera
     // is final for this frame. Picking uses the same packed index-to-cell map.
     const fixed = (Boolean(cinematic) || !this.looping) && !responsiveOpening;
-    this.visibility.update(this.camera, fog.far, trackX, entryZ + this.rail.value, this.extraCoverage);
-    this.cells = fixed ? Array.from({ length: 160 }, (_, i) => poolCell(i))
-      : Array.from({length: LOOP_COLUMNS * LOOP_ROWS}, (_, i) => visibleCell(i, {lane:this.laneFocus.value,row:this.shoulder.value}));
+    this.visibility.update(this.camera, fog.far, trackX, entryZ + this.rail.value, this.extraCoverage, true);
+    const rows = fixed ? [this.fixedCells] : this.archiveWindow.update({
+      lane: 2 + trackX / COLUMN_SPACING,
+      row: 15.5 + (-2.17 - entryZ - this.rail.value) / ROW_SPACING,
+    });
+    this.cells = fixed ? this.fixedCells : this.archiveWindow.cells;
     const hidden = new Set(this.outgoing.map(o => cellKey(o.cell)));
     hidden.add(cellKey(this.selectedCell));
     this.drawnCells = [];
     this.relayPoints.clear();
     this.matrixUpdates ??= new InstanceUpdates(this.instances[0].instanceMatrix);
     if (this.themeAttribute) this.themeUpdates ??= new InstanceUpdates(this.themeAttribute);
-    for (const cell of this.cells) {
-      const { row, lane } = cell;
-      if (hidden.has(cellKey(cell))) continue;
-      const x = (lane - 2) * COLUMN_SPACING - trackX;
-      const y = -4.6 + field(row, lane) + hoverLift(cell) - this.presentationDrop(cell);
-      const z = (row - 15.5) * ROW_SPACING + entryZ + this.rail.value;
-      if (!fixed && !this.visibility.intersects(x, y, z)) continue;
-      const i = this.drawnCells.length;
-      this.ensureInstanceCapacity(i + 1);
-      this.drawnCells.push(cell);
-      this.themeUpdates?.scalar(i, this.theme.sample(cell, time));
-      this.categoryUpdates?.set(i*3,this.categoryTint(fileAtCell(cell)).toArray());
-      const slope = field(row + .5, lane) - field(row - .5, lane);
-      this.dummy.position.set(x, y, z);
-      this.dummy.rotation.set(slope * .024 * (1 - detail), 0, 0);
-      this.dummy.scale.setScalar(1);
-      this.dummy.updateMatrix();
-      if (play.enabled) this.relayPoints.set(cellKey(cell), { cell: { ...cell }, point: new THREE.Vector3(0, 3.5, 0).applyMatrix4(this.dummy.matrix) });
-      this.matrixUpdates!.set(i * 16, this.dummy.matrix.elements);
+    if (this.arrivalAttribute) this.arrivalUpdates ??= new InstanceUpdates(this.arrivalAttribute);
+    this.arrival.begin();
+    for (const cells of rows) {
+      let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+      for(let j=0;j<cells.length;j++) {
+        const cell=cells[j];
+        const x=(cell.lane-2)*COLUMN_SPACING-trackX;
+        const y=-4.6+field(cell.row,cell.lane)+hoverLift(cell)-this.presentationDrop(cell);
+        const z=(cell.row-15.5)*ROW_SPACING+entryZ+this.rail.value;
+        this.rowPositions[j*3]=x;this.rowPositions[j*3+1]=y;this.rowPositions[j*3+2]=z;
+        minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+      }
+      if (!fixed && !this.visibility.intersectsRow(minX,maxX,minY,maxY,this.rowPositions[2])) continue;
+      for (let j = 0; j < cells.length; j++) {
+        const cell = cells[j], {row,lane} = cell;
+        const presence = this.arrival.sample(cell, time, fixed || this.reduced || this.reveal < .8, this.coordinateOrigin);
+        if (hidden.has(cellKey(cell))) continue;
+        const x=this.rowPositions[j*3],y=this.rowPositions[j*3+1],z=this.rowPositions[j*3+2],i=this.drawnCells.length;
+        this.ensureInstanceCapacity(i + 1);
+        this.drawnCells.push(cell);
+        this.arrivalUpdates?.scalar(i, presence);
+        this.themeUpdates?.scalar(i, this.theme.sample(cell, time));
+        const color = this.categoryTint(fileAtCell(cell));
+        this.categoryUpdates?.scalar(i*3,color.r);
+        this.categoryUpdates?.scalar(i*3+1,color.g);
+        this.categoryUpdates?.scalar(i*3+2,color.b);
+        const slope = field(row + .5, lane) - field(row - .5, lane);
+        this.dummy.position.set(x,y,z);
+        this.dummy.rotation.set(slope * .024 * (1 - detail),0,0);
+        this.dummy.scale.setScalar(1);
+        this.dummy.updateMatrix();
+        if (play.enabled) this.relayPoints.set(cellKey(cell), { cell: { ...cell }, point: new THREE.Vector3(0,3.5,0).applyMatrix4(this.dummy.matrix) });
+        this.matrixUpdates!.set(i*16,this.dummy.matrix.elements);
+      }
     }
+    this.arrival.end();
+    if (this.arrivalUpdates?.commit()) this.renderState.invalidate();
     const countChanged = this.instances[0].count !== this.drawnCells.length;
     const matricesChanged = this.matrixUpdates!.commit();
     for (const inst of this.instances) {

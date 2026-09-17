@@ -1,9 +1,10 @@
+import { archiveArrivalMaterial } from "./archive-arrival.ts";
 import * as THREE from "three";
 
 /** A sharp annotation pass after postprocessing, with real scene occlusion. */
 export class SharpTitleRenderer {
   private depth = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide });
-  constructor() { this.depth.colorWrite = false; }
+  constructor() { this.depth.colorWrite = false; archiveArrivalMaterial(this.depth); }
   dispose() { this.depth.dispose(); }
 
   render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
