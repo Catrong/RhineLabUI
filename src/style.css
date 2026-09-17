@@ -626,13 +626,17 @@ button {
   font: inherit;
 }
 .hover-label {
-  position: absolute;
-  left: 60px;
-  bottom: 264px;
-  font-size: 13px;
-  color: #6f675b;
-  letter-spacing: 1px;
+  position:fixed;z-index:24;pointer-events:none;
+  left:0;top:0;transform:translate(-50%,-100%);
+  max-width:min(360px,calc(100vw - 24px));
+  padding:8px 12px;font-size:13px;line-height:1.6;
+  color:var(--theme-ink,#080a08);
+  background:color-mix(in srgb,var(--theme-paper,#eae5e1) 90%,transparent);
+  border-bottom:1px solid var(--theme-line,#aaa59a);
+  letter-spacing:.5px;
 }
+.hover-label[hidden],.blog-visible .hover-label {display:none;}
+
 .system-footer {
   position: absolute;
   bottom: 35px;
@@ -2101,3 +2105,15 @@ button {
 [data-mode="detail"] .boot {
   visibility: hidden;
 }
+
+/* Four lines grow around the hit area without shifting the original button. */
+.read-file { position:relative; }
+.read-file::before,.read-file::after {
+  content:"";position:absolute;inset:-10px -16px;pointer-events:none;
+  border:0 solid currentColor;opacity:0;
+  transition:transform 260ms cubic-bezier(.2,.7,.2,1),opacity 120ms;
+}
+.read-file::before {border-top-width:1px;border-bottom-width:1px;transform:scaleX(0);transform-origin:left;}
+.read-file::after {border-left-width:1px;border-right-width:1px;transform:scaleY(0);transform-origin:bottom;transition-delay:70ms;}
+.read-file:is(:hover,:focus-visible)::before,.read-file:is(:hover,:focus-visible)::after {transform:scale(1);opacity:1;}
+.reduce-motion .read-file::before,.reduce-motion .read-file::after {transition:none;}

@@ -139,3 +139,45 @@ test("fresh settings default to performance without overriding saved custom sett
   assert.deepEqual(normalizeQuality(undefined), qualityPresets.performance);
   assert.deepEqual(normalizeQuality(qualityPresets.high), qualityPresets.high);
 });
+
+test("category color is stable and applied to individual and instanced label shaders", async () => {
+  const { categoryColor } = await import("../src/category-color.ts");
+  const { themeMaterial, setCategoryTint } =
+    await import("../src/theme-material.ts");
+  const THREE = await import("three");
+  assert.equal(new Set(["技术", "设计", "随笔"].map(categoryColor)).size, 3);
+  assert.equal(typeof categoryColor("constructor"), "string");
+  assert.equal(typeof categoryColor("__proto__"), "string");
+  assert.equal(
+    categoryColor("长分类 / 自定义"),
+    categoryColor("长分类 / 自定义"),
+  );
+  for (const instanced of [false, true]) {
+    const material = new THREE.MeshPhysicalMaterial();
+    themeMaterial(material, "Index_Inlay", instanced);
+    const shader = {
+      vertexShader: THREE.ShaderLib.physical.vertexShader,
+      fragmentShader: THREE.ShaderLib.physical.fragmentShader,
+      uniforms: {},
+    };
+    material.onBeforeCompile(shader, {});
+    assert.ok(shader.uniforms.rhineCategoryTint);
+    assert.ok(
+      shader.fragmentShader.includes(
+        instanced ? "vArchiveCategory" : "rhineCategoryTint",
+      ),
+    );
+    if (instanced)
+      assert.ok(
+        shader.vertexShader.includes("attribute vec3 archiveCategory;"),
+      );
+    const group = new THREE.Group(),
+      geometry = new THREE.BoxGeometry();
+    group.add(new THREE.Mesh(geometry, material));
+    const color = new THREE.Color(categoryColor("技术"));
+    setCategoryTint(group, color);
+    assert.ok(shader.uniforms.rhineCategoryTint.value.equals(color));
+    geometry.dispose();
+    material.dispose();
+  }
+});

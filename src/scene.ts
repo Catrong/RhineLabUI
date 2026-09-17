@@ -1,3 +1,4 @@
+import { categoryColor } from "./category-color";
 import { themeColor } from "./theme-ui";
 import { documentExtraction, DOCUMENT_EXTRACTION_DURATION, DOCUMENT_CLEARANCE } from "./document-extraction";
 import type { Post } from "./blog-content";
@@ -8,7 +9,7 @@ import { RenderState } from "./render-state";
 import { SharedDepthAO, SharedDepthBokeh } from "./shared-depth";
 import { disposeThreeTree } from "./three-resources";
 import { ThemeWave } from "./theme-motion";
-import { themeMaterial, themeEnvironment } from "./theme-material";
+import { themeMaterial, themeEnvironment, setCategoryTint } from "./theme-material";
 import { RhythmMotion, rhythmDisplacement, quietBands, type MusicBands, type RhythmStyle } from "./archive-play-motion";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { createArchiveLighting, type LightingLook } from "./archive-lighting";
@@ -125,6 +126,14 @@ export class ArchiveScene {
   }
   setSelectedIndexAccent(onlySelected: boolean) { this.selectedIndexOnly = onlySelected; }
   private themeAttribute?: THREE.InstancedBufferAttribute;
+  private categoryAttribute?: THREE.InstancedBufferAttribute;
+  private categoryUpdates?: InstanceUpdates;
+  private categoryColors=new Map<string,THREE.Color>();
+  private categoryTint(index:number) {
+    const category=records[index]?.category ?? '';
+    if(!this.categoryColors.has(category))this.categoryColors.set(category,new THREE.Color(categoryColor(category)));
+    return this.categoryColors.get(category)!;
+  }
   get themeAmount() { return this.theme.background(performance.now() / 1000); }
   setTheme(dark: boolean, immediate = false) { this.theme.set(dark, performance.now() / 1000, this.selectedCell, immediate); }
   private playfield = { enabled: false, bands: quietBands(), strength: 1, flatten: 0, target: null as string | null, breathing: true };
@@ -252,6 +261,7 @@ export class ArchiveScene {
   private displayHeight = 0;
   private layoutKind = "";
   onSelect?: (index: number, cell?: ArchiveCell) => void;
+  onOpen?: () => void;
   onHover?: (index: number | null) => void;
   onNavigate?: (axis: "row" | "lane", direction: number) => void;
   constructor(
@@ -468,6 +478,11 @@ export class ArchiveScene {
       this.appearance.register(name, mat, arrayMat);
       this.themeAttribute ??= new THREE.InstancedBufferAttribute(new Float32Array(count), 1).setUsage(THREE.DynamicDrawUsage);
       geom.setAttribute("archiveTheme", this.themeAttribute);
+      if(name==='Index_Inlay') {
+        this.categoryAttribute=new THREE.InstancedBufferAttribute(new Float32Array(count*3),3).setUsage(THREE.DynamicDrawUsage);
+        geom.setAttribute('archiveCategory',this.categoryAttribute);
+        this.categoryUpdates=new InstanceUpdates(this.categoryAttribute);
+      }
       themeMaterial(arrayMat, name, true, this.subduedIndex);
       const inst = new THREE.InstancedMesh(geom, arrayMat, count);
       // All surfaces move rigidly together; share the transform buffer on the GPU.
@@ -652,6 +667,7 @@ export class ArchiveScene {
     const frame=this.articleFrame, model=this.articleSource.model;
     model.position.copy(this.model.position);model.quaternion.copy(this.model.quaternion);
     model.visible=true;this.model.visible=false;
+    setCategoryTint(model,this.categoryTint(this.selectedSlot));
     this.articleSource.setClarity(THREE.MathUtils.lerp(this.articleInitialClarity,1,frame.clarity));
     this.appearance.setTheme(model,this.themeAmount);
     for(const child of model.children) {
@@ -752,6 +768,7 @@ export class ArchiveScene {
     });
     this.appearance.prepare(model);
     this.appearance.apply(model, 1);
+    setCategoryTint(model,this.categoryTint(this.selectedSlot));
     this.appearance.setClarity(model, this.decryption.clarity);
     this.appearance.setTheme(model, this.themeAmount);
     const canvas = document.createElement("canvas");
@@ -1009,6 +1026,12 @@ export class ArchiveScene {
     this.themeAttribute = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
     if (previousTheme) this.themeAttribute.array.set(previousTheme.array);
     for (const inst of this.instances) inst.geometry.setAttribute("archiveTheme", this.themeAttribute);
+    if(this.categoryAttribute) {
+      const attribute=new THREE.InstancedBufferAttribute(new Float32Array(capacity*3),3).setUsage(THREE.DynamicDrawUsage);
+      attribute.array.set(this.categoryAttribute.array);
+      for(const inst of this.instances)if(inst.geometry.hasAttribute('archiveCategory'))inst.geometry.setAttribute('archiveCategory',attribute);
+      this.categoryAttribute=attribute;this.categoryUpdates=new InstanceUpdates(attribute);
+    }
     this.matrixUpdates = new InstanceUpdates(matrix);
     this.themeUpdates = new InstanceUpdates(this.themeAttribute);
     this.instanceCapacity = capacity;
@@ -1308,7 +1331,10 @@ export class ArchiveScene {
           }
         } else if (!moved) {
           const cell = this.pickCell(e.clientX, e.clientY);
-          if (cell) this.onSelect?.(fileAtCell(cell), cell);
+          if(cell) {
+            if(sameCell(cell,this.selectedCell))this.onOpen?.();
+            else this.onSelect?.(fileAtCell(cell),cell);
+          }
         }
       }
       reset();
@@ -1597,6 +1623,7 @@ export class ArchiveScene {
       cinematic ? shot + 5 : undefined);
     this.appearance.apply(this.model, ease(this.lift.value / 0.4));
     this.appearance.setClarity(this.model, this.decryption.clarity);
+    setCategoryTint(this.model,this.categoryTint(this.selectedSlot));
     // Reference 26.92–27.76: the array travels horizontally into a white field.
     const entry = cinematic ? ease((shot - 21.9) / 0.86) : this.reveal;
     const entranceTime = THREE.MathUtils.clamp((shot - 21.92) / 0.75, 0, 1);
@@ -1623,6 +1650,7 @@ export class ArchiveScene {
       this.appearance.setTheme(o.group, this.theme.sample(o.cell, time), indexDim(o.lift.value));
       o.clarity = this.reduced ? 0 : o.clarity * Math.exp(-dt * 9);
       this.appearance.setClarity(o.group, o.clarity);
+      setCategoryTint(o.group,this.categoryTint(o.slot));
       const { row, lane } = o.cell;
       o.group.rotation.x =
         (field(row + 0.5, lane) - field(row - 0.5, lane)) *
@@ -1866,6 +1894,7 @@ export class ArchiveScene {
       this.ensureInstanceCapacity(i + 1);
       this.drawnCells.push(cell);
       this.themeUpdates?.scalar(i, this.theme.sample(cell, time));
+      this.categoryUpdates?.set(i*3,this.categoryTint(fileAtCell(cell)).toArray());
       const slope = field(row + .5, lane) - field(row - .5, lane);
       this.dummy.position.set(x, y, z);
       this.dummy.rotation.set(slope * .024 * (1 - detail), 0, 0);
@@ -1883,6 +1912,7 @@ export class ArchiveScene {
     // renderer culling and do not need an O(n) bound recomputation each frame.
     if (matricesChanged || countChanged || !this.instances[0].boundingSphere) this.instances[0].computeBoundingSphere();
     this.themeUpdates?.commit();
+    if(this.categoryUpdates?.commit())this.renderState.invalidate();
     let neighborTop = -Infinity;
     const lane = selectedLane,
       row = selectedRow;
@@ -1950,6 +1980,8 @@ export class ArchiveScene {
         // Three increments material.version for its own double-sided transmission
         // passes. Track application-controlled inputs, not that render-side counter.
         state.add(object.geometry.id, mat.uuid, mat.map?.uuid, mat.map?.version ?? 0);
+        const tint=mat.userData.categoryTint?.value as THREE.Color | undefined;
+        if(tint)state.floats(tint.r,tint.g,tint.b);
         state.floats(
           mat.opacity, mat.roughness, mat.metalness, mat.transmission, mat.thickness,
           mat.attenuationDistance, mat.clearcoat, mat.clearcoatRoughness,
@@ -1972,6 +2004,24 @@ export class ArchiveScene {
       try { this.renderer.render(this.articleOverlayScene,this.camera); }
       finally { this.renderer.autoClear=autoClear; }
     }
+  }
+  hoverAnchor() {
+    if(!this.hoverCell || !this.canBrowse())return null;
+    const point=new THREE.Vector3(0,3.92,.1);
+    if(sameCell(this.hoverCell,this.selectedCell))this.model.localToWorld(point);
+    else {
+      const outgoing=this.outgoing.find(o=>sameCell(o.cell,this.hoverCell!));
+      if(outgoing)outgoing.group.localToWorld(point);
+      else {
+        const index=this.drawnCells.findIndex(cell=>sameCell(cell,this.hoverCell!));
+        if(index<0)return null;
+        const matrix=new THREE.Matrix4();this.instances[0].getMatrixAt(index,matrix);point.applyMatrix4(matrix);
+      }
+    }
+    point.project(this.camera);
+    if(point.z < -1 || point.z > 1)return null;
+    const rect=this.renderer.domElement.getBoundingClientRect();
+    return {x:rect.left+(point.x+1)*rect.width/2,y:rect.top+(1-point.y)*rect.height/2};
   }
   projectCard(x: number, y: number) {
     this.model.updateMatrixWorld(true);

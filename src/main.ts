@@ -73,7 +73,7 @@ $("#stage").innerHTML = `
   <div id="inspection-text" aria-hidden="true">CONFIDENTIALITY:<strong>GENERAL BUSINESS USE</strong></div>
   <section id="archive-ui" class="archive-ui" aria-label="档案选择">
     <div class="archive-callout"><div class="eyebrow">INTERNAL DATABASE <span>／</span> <span id="archive-category">机构档案</span></div><button class="file-title" data-action="open">FILE NUMBER: <span id="selected-id">X-<span id="selected-code">001</span></span><span class="file-open">↗</span></button><div class="callout-rule"><i></i></div><div class="file-summary"><span id="selected-title">莱茵生命</span><span id="selected-clearance">BUSINESS AREA</span></div><button class="read-file" data-action="open">READ ARTICLE <span>→</span></button></div>
-    <div id="hover-label" class="hover-label" hidden>X-<span id="hover-code">001</span> / <span id="hover-title"></span></div>
+    <div id="hover-label" class="hover-label" hidden><span id="hover-code" hidden>001</span><span id="hover-title"></span></div>
     <div class="archive-counter"><span class="tiny-label">ARCHIVE / SELECT</span><div><span id="selected-number">01</span><i>/</i><span class="count-total">12</span></div></div>
     <div class="archive-navigation"><button data-action="prev" aria-label="上一个档案">↑</button><div id="file-ticks" class="file-ticks"></div><button data-action="next" aria-label="下一个档案">↓</button></div>
     <div class="column-navigation"><button data-action="column-prev" aria-label="上一列">←</button><div><span id="column-number">CATEGORY <span id="column-index">01</span> / <span id="column-total"></span></span><strong id="column-name">机构档案</strong></div><button data-action="column-next" aria-label="下一列">→</button></div>
@@ -985,6 +985,16 @@ function frame(ms: number) {
   wallpaperEffects?.update(time, prefs.reduced);
   // The calibrated 2D opening fully covers the scene until array entry.
   if (!viewer?.isOpen && (!cinema || cinema.time >= 21.9)) scene?.update(time, cinema);
+  const hoverLabel=$("#hover-label");
+  if(!hoverLabel.hidden) {
+    const anchor=mode==='archive' && !modal && !blog?.visible ? scene?.hoverAnchor() : null;
+    if(!anchor)hoverLabel.hidden=true;
+    else {
+      const half=hoverLabel.offsetWidth/2;
+      hoverLabel.style.left=`${Math.max(half+12,Math.min(innerWidth-half-12,anchor.x))}px`;
+      hoverLabel.style.top=`${Math.max(hoverLabel.offsetHeight+12,anchor.y-10)}px`;
+    }
+  }
   viewer?.update(time);
   if (threeState === "closing" && scene?.presentationHidden) releaseThree();
   playground?.position();
@@ -1018,6 +1028,10 @@ function frame(ms: number) {
   requestAnimationFrame(frame);
 }
 function bindScene(scene: ArchiveScene, cell?: { lane: number; row: number }) {
+    document.body.append($("#hover-label"));
+    scene.onOpen=()=>{
+      if(mode==='archive' && !modal && !viewer?.isOpen && !blog?.visible)openFile();
+    };
     scene.select(selected, cell ? { cell } : undefined);
     scene.onSelect = (i, cell) => {
       if (mode !== "archive" || modal || viewer?.isOpen) return;
@@ -1042,7 +1056,9 @@ function bindScene(scene: ArchiveScene, cell?: { lane: number; row: number }) {
         animated: !label.hidden && animated,
       });
       hoverTitle.update({ text: records[i].title, animated: !label.hidden && animated });
+      const first=label.hidden;
       label.hidden = false;
+      if(first && !prefs.reduced)label.animate([{opacity:0,translate:'0 6px'},{opacity:1,translate:'0 0'}],{duration:220,easing:'ease-out'});
       // Prepare the first visible value so the next hover can animate immediately.
       hoverCode.update({ animated });
       hoverTitle.update({ animated });

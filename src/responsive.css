@@ -48,7 +48,7 @@
 :is([data-layout="compact"], [data-layout="portrait"]) .brand { left: var(--edge); top: var(--top-edge); transform: scale(.48) !important; transform-origin: top left; }
 :is([data-layout="compact"], [data-layout="portrait"]) .system-nav { top: var(--top-edge); right: var(--edge); gap: 18px; }
 :is([data-layout="compact"], [data-layout="portrait"]) .system-nav button { min-height: 44px; min-width: 44px; font-size: 11px; justify-content: center; gap: 7px; }
-:is([data-layout="compact"], [data-layout="portrait"]) :is(.key, .powered, .archive-hint, .hover-label) { display: none; }
+:is([data-layout="compact"], [data-layout="portrait"]) :is(.key, .powered, .archive-hint) { display: none; }
 :is([data-layout="compact"], [data-layout="portrait"]) .system-footer { left: var(--edge); right: var(--edge); bottom: var(--bottom-edge); font-size: 8px; gap: 12px; }
 :is([data-layout="compact"], [data-layout="portrait"]) .system-footer > span:nth-child(2) { display: none; }
 :is([data-layout="compact"], [data-layout="portrait"]) .system-footer button { margin-left: auto; font-size: 9px; min-height: 28px; }

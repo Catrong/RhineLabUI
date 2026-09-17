@@ -8,12 +8,23 @@ const surfaces: Record<string, string> = {
 /** Extend existing optical shaders; one float per instance avoids new meshes or passes. */
 export function themeMaterial(material: THREE.Material, name: string, instanced = false, subduedIndex = { value: 0 }) {
   const amount = { value: 0 };
+  const categoryTint={value:new THREE.Color('#e4d6c5')};
+  if(name==='Index_Inlay')material.userData.categoryTint=categoryTint;
   const before = material.onBeforeCompile;
   const cache = material.customProgramCacheKey.bind(material)();
   const color = new THREE.Color(surfaces[name] ?? (name.includes("Orange") ? "#bb8850" : "#969f9f"));
   material.onBeforeCompile = (shader, renderer) => {
     before.call(material, shader, renderer);
     shader.uniforms.rhineTheme = amount;
+    if(name==='Index_Inlay') {
+      shader.uniforms.rhineCategoryTint=categoryTint;
+      if(instanced) {
+        shader.vertexShader='attribute vec3 archiveCategory; varying vec3 vArchiveCategory;\n'+shader.vertexShader;
+        shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvArchiveCategory=archiveCategory;');
+        shader.fragmentShader='varying vec3 vArchiveCategory;\n'+shader.fragmentShader;
+      }
+      shader.fragmentShader='uniform vec3 rhineCategoryTint;\n'+shader.fragmentShader;
+    }
     shader.uniforms.rhineDarkSurface = { value: color };
     shader.uniforms.rhineSubduedIndex = subduedIndex;
     if (instanced) {
@@ -25,15 +36,16 @@ export function themeMaterial(material: THREE.Material, name: string, instanced 
     const mix = instanced ? "vRhineTheme" : "rhineTheme";
     const printed = name === "Printed_Canvas";
     const anchor = printed ? "#include <opaque_fragment>" : "#include <roughnessmap_fragment>";
+    const tint=instanced ? "vArchiveCategory" : "rhineCategoryTint";
     const dark = printed
       ? "mix(vec3(0.023, 0.032, 0.037), vec3(0.78, 0.78, 0.71), 1.0 - smoothstep(0.12, 0.65, dot(diffuseColor.rgb, vec3(.2126,.7152,.0722))))"
       : name === "Frosted_Polymer" && !instanced
         ? "mix(rhineDarkSurface, vec3(0.92, 0.96, 0.97), glassRevealAtHeight(archiveClarity, vArchiveHeight))"
-        : name === "Index_Inlay" ? "mix(rhineDarkSurface, vec3(0.030, 0.042, 0.048), rhineSubduedIndex)" : "rhineDarkSurface";
+        : name === "Index_Inlay" ? `mix(${tint} * .85, vec3(0.030, 0.042, 0.048), rhineSubduedIndex)` : "rhineDarkSurface";
     const output = printed ? "outgoingLight" : "diffuseColor.rgb";
-    shader.fragmentShader = shader.fragmentShader.replace(anchor, `${output} = mix(${output}, ${dark}, ${mix});\n${anchor}`);
+    shader.fragmentShader = shader.fragmentShader.replace(anchor, `${name === "Index_Inlay" ? `${output} = ${tint};` : ""}\n${output} = mix(${output}, ${dark}, ${mix});\n${anchor}`);
   };
-  material.customProgramCacheKey = () => `${cache}-rhine-theme-${name}-${instanced}`;
+  material.customProgramCacheKey = () => `${cache}-rhine-theme-category-${name}-${instanced}`;
   return amount;
 }
 
@@ -57,4 +69,12 @@ export function themeEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRender
   scene.environmentIntensity = THREE.MathUtils.lerp(baseline.intensity, .32, amount);
   renderer.toneMappingExposure = THREE.MathUtils.lerp(baseline.exposure, .98, amount);
   for (const { light, intensity } of baseline.lights) light.intensity = intensity * (1 - .35 * amount);
+}
+
+export function setCategoryTint(group:THREE.Group,color:THREE.Color) {
+  group.traverse(object=>{
+    if(!(object instanceof THREE.Mesh))return;
+    const material=object.material as THREE.Material;
+    material.userData.categoryTint?.value.copy(color);
+  });
 }
