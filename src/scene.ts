@@ -1,3 +1,4 @@
+import { ArchiveHoverTitle } from "./archive-hover-title";
 import { categoryColor } from "./category-color";
 import { themeColor } from "./theme-ui";
 import { documentExtraction, DOCUMENT_EXTRACTION_DURATION, DOCUMENT_CLEARANCE } from "./document-extraction";
@@ -62,6 +63,7 @@ const ease = (t: number) => {
 };
 export class ArchiveScene {
   private inputEvents = new AbortController();
+  private hoverTitle = new ArchiveHoverTitle();
   private presence = 1;
   private presenceTarget = 1;
   setPresentationVisible(visible: boolean, immediate = false) {
@@ -85,6 +87,7 @@ export class ArchiveScene {
     (this.articlePaper?.material as THREE.Material | undefined)?.dispose();
     this.inputEvents.abort();
     this.cancelPointer();
+    this.hoverTitle.dispose();
     disposeThreeTree(this.scene);
     this.appearance.disposeSources();
     this.model.clear();
@@ -262,7 +265,6 @@ export class ArchiveScene {
   private layoutKind = "";
   onSelect?: (index: number, cell?: ArchiveCell) => void;
   onOpen?: () => void;
-  onHover?: (index: number | null) => void;
   onNavigate?: (axis: "row" | "lane", direction: number) => void;
   constructor(
     private container: HTMLElement,
@@ -294,6 +296,7 @@ export class ArchiveScene {
     );
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.addEventListener('webglcontextrestored', () => this.renderState.invalidate(), { signal: this.inputEvents.signal });
+    this.scene.add(this.hoverTitle.mesh);
     this.scene.background = new THREE.Color("#eae5e1");
     // The frame updates world matrices once after simulation; subsequent
     // beauty, normal, depth and transmission renders reuse those same matrices.
@@ -1100,7 +1103,7 @@ export class ArchiveScene {
     )
       return;
     this.hoverCell = cell ? { ...cell } : null;
-    this.onHover?.(cell ? fileAtCell(cell) : null);
+
   }
   private pickCell(x: number, y: number) {
     const r = this.renderer.domElement.getBoundingClientRect();
@@ -1964,6 +1967,9 @@ export class ArchiveScene {
     // Keep all simulation and picking current. Reuse the composited canvas only
     // when its actual inputs are identical, including late textures and materials.
     this.updateArticleAssembly(dt, Boolean(cinematic));
+    this.hoverTitle.update(cinematic ? null : this.hoverMatrix(),
+      this.hoverCell ? records[fileAtCell(this.hoverCell)]?.title ?? "" : "",
+      dt, { paper: themeColor("paper", this.themeAmount), ink: themeColor("ink", this.themeAmount), line: themeColor("line", this.themeAmount) }, this.reduced);
     const state = this.renderState;
     this.scene.updateMatrixWorld();
     // A changed instance buffer already proves the image changed. Avoid a
@@ -2011,29 +2017,25 @@ export class ArchiveScene {
       finally { this.renderer.autoClear=autoClear; }
     }
   }
-  hoverQuad(width: number, height: number) {
-    if(!this.hoverCell || !this.canBrowse() || !width || !height)return null;
+  private hoverMatrix() {
+    if(!this.hoverCell || !this.canBrowse())return null;
     const matrix=new THREE.Matrix4();
-    if(sameCell(this.hoverCell,this.selectedCell))matrix.copy(this.model.matrixWorld);
-    else {
+    if(sameCell(this.hoverCell,this.selectedCell)) {
+      this.model.updateWorldMatrix(true,false);
+      matrix.copy(this.model.matrixWorld);
+    } else {
       const outgoing=this.outgoing.find(o=>sameCell(o.cell,this.hoverCell!));
-      if(outgoing)matrix.copy(outgoing.group.matrixWorld);
-      else {
+      if(outgoing) {
+        outgoing.group.updateWorldMatrix(true,false);
+        matrix.copy(outgoing.group.matrixWorld);
+      } else {
         const index=this.drawnCells.findIndex(cell=>sameCell(cell,this.hoverCell!));
         if(index<0)return null;
         this.instances[0].getMatrixAt(index,matrix);
         matrix.premultiply(this.instances[0].matrixWorld);
       }
     }
-    // The label occupies the same local XY plane as the cover. Its bottom-left
-    // sits just above the card's left edge; all four corners retain perspective.
-    const labelHeight=5*height/width;
-    const corners=[[-2.5,3.92+labelHeight],[2.5,3.92+labelHeight],[2.5,3.92],[-2.5,3.92]];
-    const points=corners.map(([x,y])=>new THREE.Vector3(x,y,.255).applyMatrix4(matrix).project(this.camera));
-    if(points.some(point=>point.z < -1 || point.z > 1))return null;
-    // The label shares the scene container's stacking context below the HUD.
-    // Use local CSS pixels; the stage applies its viewport scale once to both.
-    return points.map(point=>({x:(point.x+1)*this.container.clientWidth/2,y:(1-point.y)*this.container.clientHeight/2}));
+    return matrix;
   }
   projectCard(x: number, y: number) {
     this.model.updateMatrixWorld(true);

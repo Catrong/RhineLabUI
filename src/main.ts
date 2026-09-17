@@ -1,4 +1,3 @@
-import { hudQuadMatrix } from "./hud-projection";
 import { posts } from "./posts";
 import { BlogApp } from "./blog";
 let blog: BlogApp | undefined;
@@ -74,7 +73,6 @@ $("#stage").innerHTML = `
   <div id="inspection-text" aria-hidden="true">CONFIDENTIALITY:<strong>GENERAL BUSINESS USE</strong></div>
   <section id="archive-ui" class="archive-ui" aria-label="档案选择">
     <div class="archive-callout"><div class="eyebrow">INTERNAL DATABASE <span>／</span> <span id="archive-category">机构档案</span></div><button class="file-title" data-action="open">FILE NUMBER: <span id="selected-id">X-<span id="selected-code" data-rn-local-layout>001</span></span><span class="file-open">↗</span></button><div class="callout-rule"><i></i></div><div class="file-summary"><span id="selected-title">莱茵生命</span><span id="selected-clearance">BUSINESS AREA</span></div><button class="read-file" data-action="open">READ ARTICLE <span>→</span><i class="read-border" aria-hidden="true"><i></i><i></i><i></i><i></i></i></button></div>
-    <div id="hover-label" class="hover-label" hidden><span id="hover-code" data-rn-local-layout hidden>001</span><span id="hover-title" data-rn-local-layout></span></div>
     <div class="archive-counter"><span class="tiny-label">ARCHIVE / SELECT</span><div><span id="selected-number" data-rn-local-layout>01</span><i>/</i><span class="count-total">12</span></div></div>
     <div class="archive-navigation"><button data-action="prev" aria-label="上一个档案">↑</button><div id="file-ticks" class="file-ticks"></div><button data-action="next" aria-label="下一个档案">↓</button></div>
     <div class="column-navigation"><button data-action="column-prev" aria-label="上一列">←</button><div><span id="column-number">CATEGORY <span id="column-index" data-rn-local-layout>01</span> / <span id="column-total"></span></span><strong id="column-name">机构档案</strong></div><button data-action="column-next" aria-label="下一列">→</button></div>
@@ -197,7 +195,6 @@ const columnTitle = createRollingText($("#column-name"), {
   ...textOptions,
   text: $("#column-name").textContent ?? "",
 });
-const hoverTitle = createRollingText($("#hover-title"), { ...textOptions, text: "" });
 const categoryTitle = createRollingText($("#archive-category"), {
   ...textOptions,
   text: $("#archive-category").textContent ?? "",
@@ -206,9 +203,8 @@ const clearanceTitle = createRollingText($("#selected-clearance"), {
   ...textOptions,
   text: $("#selected-clearance").textContent ?? "",
 });
-const rollingTitles = [selectionTitle, columnTitle, hoverTitle, categoryTitle, clearanceTitle];
+const rollingTitles = [selectionTitle, columnTitle, categoryTitle, clearanceTitle];
 const selectedCode = createRollingNumber($("#selected-code"), codeOptions);
-const hoverCode = createRollingNumber($("#hover-code"), codeOptions);
 const audio = new TerminalAudio();
 let musicSuppressed = false;
 function configureAudio() { audio.configure({ ...prefs, music: prefs.music && !musicSuppressed }); }
@@ -276,7 +272,6 @@ function savePrefs() {
   rollingTitles.forEach(title => title.update({ animated: !prefs.reduced && mode === "archive" }));
   columnCounter.update({ animated: !prefs.reduced && mode === "archive" });
   selectedCode.update({ animated: !prefs.reduced && mode === "archive" });
-  hoverCode.update({ animated: !prefs.reduced && mode === "archive" });
   $("#stage").classList.toggle("reduce-motion", prefs.reduced);
   syncWallpaperBackground();
 }
@@ -341,8 +336,6 @@ function setMode(next: Mode) {
   rollingTitles.forEach(title => title.update({ animated: !prefs.reduced && next === "archive" }));
   if (next !== "archive") {
     rollingTitles.forEach(title => title.finish());
-    hoverCode.finish();
-    $("#hover-label").hidden = true;
   }
   if (next === "detail" && mode !== "detail") recordAccess();
   mode = next;
@@ -986,13 +979,6 @@ function frame(ms: number) {
   wallpaperEffects?.update(time, prefs.reduced);
   // The calibrated 2D opening fully covers the scene until array entry.
   if (!viewer?.isOpen && (!cinema || cinema.time >= 21.9)) scene?.update(time, cinema);
-  const hoverLabel=$("#hover-label");
-  if(!hoverLabel.hidden) {
-    const width=hoverLabel.offsetWidth, height=hoverLabel.offsetHeight;
-    const quad=mode==='archive' && !modal && !blog?.visible ? scene?.hoverQuad(width,height) : null;
-    if(!quad)hoverLabel.hidden=true;
-    else hoverLabel.style.transform=`matrix3d(${hudQuadMatrix(width,height,quad).join(',')})`;
-  }
   viewer?.update(time);
   if (threeState === "closing" && scene?.presentationHidden) releaseThree();
   playground?.position();
@@ -1026,7 +1012,6 @@ function frame(ms: number) {
   requestAnimationFrame(frame);
 }
 function bindScene(scene: ArchiveScene, cell?: { lane: number; row: number }) {
-    $("#three-scene").append($("#hover-label"));
     scene.onOpen=()=>{
       if(mode==='archive' && !modal && !viewer?.isOpen && !blog?.visible)openFile();
     };
@@ -1040,27 +1025,7 @@ function bindScene(scene: ArchiveScene, cell?: { lane: number; row: number }) {
       if (axis === "lane") stepColumn(direction);
       else stepFile(direction);
     };
-    scene.onHover = (i) => {
-      const label = $("#hover-label");
-      if (i === null || i < 0 || !records[i]) {
-        label.hidden = true;
-        hoverCode.finish();
-        hoverTitle.finish();
-        return;
-      }
-      const animated = !prefs.reduced && mode === "archive";
-      hoverCode.update({
-        value: Number(records[i].id.slice(2)),
-        animated: !label.hidden && animated,
-      });
-      hoverTitle.update({ text: records[i].title, animated: !label.hidden && animated });
-      const first=label.hidden;
-      label.hidden = false;
-      if(first && !prefs.reduced)label.animate([{opacity:0},{opacity:1}],{duration:220,easing:'ease-out'});
-      // Prepare the first visible value so the next hover can animate immediately.
-      hoverCode.update({ animated });
-      hoverTitle.update({ animated });
-    };
+
 }
 function syncThreeButton() {
   $("#stage").dataset.threeState = threeState;
@@ -1084,7 +1049,6 @@ function releaseThree() {
     documentDecryption.reset($("#detail-content"), true);
   }
   threeState = "off"; syncThreeButton();
-  $("#hover-label").hidden = true;
   delete $("#three-scene").dataset.renderQuality;
   updateQualitySummary();
 }

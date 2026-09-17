@@ -626,17 +626,6 @@ button {
 .archive-hint kbd {
   font: inherit;
 }
-.hover-label {
-  position:absolute;z-index:1;pointer-events:none;
-  left:0;top:0;transform-origin:0 0;
-  width:360px;box-sizing:border-box;overflow-wrap:anywhere;
-  padding:8px 12px;font-size:13px;line-height:1.6;
-  color:var(--theme-ink,#080a08);
-  background:color-mix(in srgb,var(--theme-paper,#eae5e1) 90%,transparent);
-  border-bottom:1px solid var(--theme-line,#aaa59a);
-  letter-spacing:.5px;
-}
-.hover-label[hidden],.blog-visible .hover-label {display:none;}
 
 .system-footer {
   position: absolute;
@@ -2003,7 +1992,6 @@ button {
 /* Use the same rolling engine as archive numbers, with quieter text blur. */
 #selected-title,
 #column-name,
-#hover-title,
 #archive-category,
 #selected-clearance {
   flex: none;

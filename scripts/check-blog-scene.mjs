@@ -181,3 +181,45 @@ test("category color is stable and applied to individual and instanced label sha
     material.dispose();
   }
 });
+
+
+test("hover title uses scene depth, follows the cover plane, and stops repainting at rest", async () => {
+  const { ArchiveHoverTitle } = await import("../src/archive-hover-title.ts");
+  const THREE = await import("three");
+  const original = globalThis.document;
+  let paints = 0;
+  const listeners = new Set();
+  const context = {
+    measureText: text => ({ width: text.length * 39 }),
+    fillRect() { paints++; }, fillText() {}, save() {}, restore() {},
+    beginPath() {}, rect() {}, clip() {},
+  };
+  globalThis.document = {
+    createElement: () => ({ width: 300, height: 150, getContext: () => context }),
+    fonts: { addEventListener: (_, cb) => listeners.add(cb), removeEventListener: (_, cb) => listeners.delete(cb) },
+  };
+  try {
+    const title = new ArchiveHoverTitle();
+    const matrix = new THREE.Matrix4().makeRotationY(.4).setPosition(2, 3, -4);
+    const colors = { paper: "#eae5e1", ink: "#080a08", line: "#aaa59a" };
+    title.update(matrix, "文章标题", 1, colors, true);
+    assert.equal(title.mesh.material.depthTest, true);
+    assert.equal(title.mesh.material.depthWrite, true);
+    assert.equal(title.mesh.visible, true);
+    const anchor = new THREE.Vector3().applyMatrix4(title.mesh.matrix);
+    const expected = new THREE.Vector3(-2.5, 3.92, .255).applyMatrix4(matrix);
+    assert.ok(anchor.distanceTo(expected) < 1e-8);
+    const corner = new THREE.Vector3(1, 0, 0).applyMatrix4(title.mesh.matrix);
+    assert.ok(corner.distanceTo(new THREE.Vector3(2.5, 3.92, .255).applyMatrix4(matrix)) < 1e-8);
+    const count = paints;
+    title.update(matrix, "文章标题", .016, colors, false);
+    assert.equal(paints, count);
+    title.update(null, "", .016, colors, false);
+    assert.equal(title.mesh.visible, false);
+    title.update(matrix, "下一篇", .016, colors, false);
+    assert.ok(title.mesh.material.opacity > 0 && title.mesh.material.opacity < 1);
+    title.dispose();
+    assert.equal(listeners.size, 0);
+    title.mesh.geometry.dispose(); title.mesh.material.map.dispose(); title.mesh.material.dispose();
+  } finally { globalThis.document = original; }
+});
