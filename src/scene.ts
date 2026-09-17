@@ -1,3 +1,4 @@
+import { SharpTitleRenderer } from "./sharp-title-renderer";
 import { ArchiveHoverTitle } from "./archive-hover-title";
 import { categoryColor } from "./category-color";
 import { themeColor } from "./theme-ui";
@@ -64,6 +65,7 @@ const ease = (t: number) => {
 export class ArchiveScene {
   private inputEvents = new AbortController();
   private hoverTitle = new ArchiveHoverTitle();
+  private sharpTitle = new SharpTitleRenderer();
   private hoverTitleCell: ArchiveCell | null = null;
   private presence = 1;
   private presenceTarget = 1;
@@ -89,6 +91,7 @@ export class ArchiveScene {
     this.inputEvents.abort();
     this.cancelPointer();
     this.hoverTitle.dispose();
+    this.sharpTitle.dispose();
     disposeThreeTree(this.scene);
     this.appearance.disposeSources();
     this.model.clear();
@@ -1969,9 +1972,12 @@ export class ArchiveScene {
     // Keep all simulation and picking current. Reuse the composited canvas only
     // when its actual inputs are identical, including late textures and materials.
     this.updateArticleAssembly(dt, Boolean(cinematic));
-    // Keep a single title attached to its original physical card until it has
-    // retracted; a different hovered card waits, while re-hover reverses in place.
-    if (!this.hoverTitle.mesh.visible) this.hoverTitleCell = this.hoverCell ? { ...this.hoverCell } : null;
+    // New hover targets take over immediately; leaving retracts on the old
+    // physical card, and re-entering that card reverses without resetting.
+    if (this.hoverCell && (!this.hoverTitleCell || !sameCell(this.hoverCell, this.hoverTitleCell))) {
+      this.hoverTitleCell = { ...this.hoverCell };
+      this.hoverTitle.restart();
+    }
     const titleAllowed = !cinematic && this.canBrowse();
     this.hoverTitle.update(titleAllowed ? this.hoverMatrix(this.hoverTitleCell) : null,
       this.hoverTitleCell ? records[fileAtCell(this.hoverTitleCell)]?.title ?? "" : "",
@@ -2017,6 +2023,7 @@ export class ArchiveScene {
     this.renderer.shadowMap.needsUpdate = true;
     if (this.superPerformance) this.renderer.render(this.scene, this.camera);
     else this.composer.render();
+    if(this.hoverTitle.mesh.visible)this.sharpTitle.render(this.renderer,this.scene,this.camera);
     if(this.articleOverlay?.visible) {
       const autoClear=this.renderer.autoClear;
       this.renderer.autoClear=false;

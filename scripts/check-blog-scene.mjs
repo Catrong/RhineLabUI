@@ -205,6 +205,7 @@ test("hover title uses scene depth, follows the cover plane, and stops repaintin
     title.update(matrix, "文章标题", 1, colors, true);
     assert.equal(title.mesh.material.depthTest, true);
     assert.equal(title.mesh.material.depthWrite, true);
+    assert.equal(title.mesh.layers.mask, 2 ** 31);
     assert.equal(title.mesh.visible, true);
     const anchor = new THREE.Vector3().applyMatrix4(title.mesh.matrix);
     const expected = new THREE.Vector3(-2.5, 3.92, .255).applyMatrix4(matrix);
@@ -232,4 +233,40 @@ test("hover title uses scene depth, follows the cover plane, and stops repaintin
     assert.equal(listeners.size, 0);
     title.mesh.geometry.dispose(); title.mesh.material.map.dispose(); title.mesh.material.dispose();
   } finally { globalThis.document = original; }
+});
+
+
+test("sharp title pass preserves scene color and restores renderer state", async () => {
+  const { SharpTitleRenderer } = await import("../src/sharp-title-renderer.ts");
+  const THREE = await import("three");
+  const pass = new SharpTitleRenderer(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+  const background = new THREE.Color("white"); scene.background = background;
+  const target = {}; let currentTarget = target; const calls = [];
+  const renderer = {
+    autoClear: true, shadowMap: { needsUpdate: true },
+    getRenderTarget: () => currentTarget,
+    setRenderTarget: value => { currentTarget = value; },
+    clearDepth: () => calls.push("depth-only-clear"),
+    render: () => {
+      assert.equal(renderer.autoClear, false);
+      assert.equal(scene.background, null);
+      assert.equal(currentTarget, null);
+      calls.push({ mask: camera.layers.mask, colorWrite: scene.overrideMaterial?.colorWrite });
+    },
+  };
+  pass.render(renderer, scene, camera);
+  assert.deepEqual(calls, ["depth-only-clear", { mask: 1, colorWrite: false }, { mask: 2 ** 31, colorWrite: undefined }]);
+  assert.equal(scene.background, background);
+  assert.equal(scene.overrideMaterial, null);
+  assert.equal(camera.layers.mask, 1);
+  assert.equal(renderer.autoClear, true);
+  assert.equal(currentTarget, target);
+  assert.equal(renderer.shadowMap.needsUpdate, true);
+  renderer.render = () => { throw Error("test render failure"); };
+  assert.throws(() => pass.render(renderer, scene, camera), /test render failure/);
+  assert.equal(scene.background, background);
+  assert.equal(camera.layers.mask, 1);
+  assert.equal(renderer.autoClear, true);
+  assert.equal(currentTarget, target);
+  pass.dispose();
 });

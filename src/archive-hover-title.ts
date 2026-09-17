@@ -8,7 +8,7 @@ export class ArchiveHoverTitle {
     new THREE.PlaneGeometry(1, 1).translate(.5, .5, 0),
     new THREE.MeshBasicMaterial({
       map: this.texture, transparent: true, depthTest: true, depthWrite: true,
-      alphaTest: .01, side: THREE.DoubleSide, toneMapped: false,
+      alphaTest: .01, side: THREE.DoubleSide, toneMapped: false, fog: false,
     }),
   );
   private title = "";
@@ -23,6 +23,7 @@ export class ArchiveHoverTitle {
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = 8;
     this.mesh.name = "archive-hover-title";
+    this.mesh.layers.set(31);
     this.mesh.matrixAutoUpdate = false;
     this.mesh.visible = false;
     this.mesh.raycast = () => {};
@@ -34,11 +35,14 @@ export class ArchiveHoverTitle {
     // Mesh geometry, material and map belong to the scene disposal traversal.
   }
 
+  restart() { this.progress = 0; this.mesh.visible = false; }
+
   update(matrix: THREE.Matrix4 | null, title: string, dt: number, colors: { paper: string; ink: string; line: string }, reduced: boolean, hovered = Boolean(matrix)) {
     if (!matrix) { this.mesh.visible = false; this.progress = 0; return; }
     this.title = title;
     const target = Number(hovered);
-    this.progress = reduced ? target : THREE.MathUtils.clamp(this.progress + (hovered ? 1 : -1) * dt / .3, 0, 1);
+    this.progress = reduced ? target : target + (this.progress - target) * Math.exp(-(hovered ? 26 : 32) * dt);
+    if (Math.abs(this.progress - target) < .001) this.progress = target;
     this.mesh.visible = this.progress > 0;
     if (!this.mesh.visible) return;
     const { paper, ink, line } = colors;
@@ -64,7 +68,7 @@ export class ArchiveHoverTitle {
       this.texture.needsUpdate = true;
       this.height = 5 * height / 2160;
     }
-    const eased = this.progress * this.progress * (3 - 2 * this.progress);
+    const eased = this.progress;
     const edge = 3.76;
     const bottom = 3.92 - (this.height + 3.92 - edge) * (1 - eased);
     const visibleBottom = Math.max(edge, bottom);
