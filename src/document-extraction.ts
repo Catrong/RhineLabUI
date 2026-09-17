@@ -1,32 +1,41 @@
+const clamp = (value: number) => Math.max(0, Math.min(1, value));
 const ease = (value: number) => {
-  const t = Math.max(0, Math.min(1, value));
+  const t = clamp(value);
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
-export const DOCUMENT_EXTRACTION_DURATION = 3.2;
-/** File fully clears the case before any part starts closing. */
+export const DOCUMENT_EXTRACTION_DURATION = 3.3;
+export const DOCUMENT_CLEARANCE = 0.42;
+/** One motion clock: straight out of the case, then a tangent-continuous arc. */
 export function documentExtraction(time: number) {
-  const opening = ease(time / 0.65);
-  const extraction = ease((time - 0.65) / 1.1);
-  const closing = ease((time - 1.75) / 0.65);
-  const handoff = ease((time - 1.75) / 1.3);
+  const motion = ease((time - 0.85) / 2.3);
+  const extraction = clamp(motion / DOCUMENT_CLEARANCE);
+  const handoff = clamp(
+    (motion - DOCUMENT_CLEARANCE) / (1 - DOCUMENT_CLEARANCE),
+  );
+  const opening = ease((time - 0.25) / 0.55);
+  const closing = ease((motion - DOCUMENT_CLEARANCE) / 0.36);
   return {
+    clarity: ease(time / 0.65),
+    motion,
     spread: opening * (1 - closing),
     paperX: 5.5 * extraction,
     paperY: 0.15 * extraction,
     paperZ: 0.17 + 0.12 * extraction,
     paperOpacity: time >= 0 && time < DOCUMENT_EXTRACTION_DURATION ? 1 : 0,
     handoff,
+    revealContent: handoff >= 0.25,
+    turn: ease(handoff),
     phase:
       time < 0
         ? "lifting"
         : time < 0.65
-          ? "opening"
-          : time < 1.75
-            ? "extracting"
-            : time < 2.4
-              ? "closing"
+          ? "clearing"
+          : time < 0.85
+            ? "opening"
+            : motion < DOCUMENT_CLEARANCE
+              ? "extracting"
               : time < DOCUMENT_EXTRACTION_DURATION
-                ? "handoff"
+                ? "travelling"
                 : "reading",
   };
 }

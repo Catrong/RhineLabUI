@@ -27,8 +27,9 @@ interface BlogHost {
   article(
     index: number,
     destination: () => DOMRect | undefined,
+    onRetreat: () => void,
   ): Promise<boolean>;
-  home(): void;
+  home(): Promise<void>;
   replay(): void;
   theme(): void;
   reduced(): boolean;
@@ -37,7 +38,9 @@ interface BlogHost {
 /** The blog lives outside the scaled 1920px scene so text uses real CSS pixels. */
 export class BlogApp {
   root = document.createElement("section");
-  private returnButton = document.createElement("a");
+  private returnButton = document.createElement("button");
+  private routeExits: Animation[] = [];
+  private entrance: Animation[] = [];
   private enabled = false;
   private booting = true;
   private lastList = "#/";
@@ -54,6 +57,7 @@ export class BlogApp {
   private routeVersion = 0;
   private sceneUnavailable = false;
   private extracting = false;
+  private retreating = false;
   openArticle(index: number) {
     const post = posts[index];
     if (!post) return;
@@ -77,11 +81,15 @@ export class BlogApp {
     this.root.hidden = true;
     this.root.setAttribute("aria-label", "莱茵手记");
     document.body.append(this.root);
-    this.returnButton.className = "blog-return";
-    this.returnButton.href = "#/";
-    this.returnButton.textContent = "← 返回博客";
+    this.returnButton.className = "blog-home";
+    this.returnButton.type = "button";
+    this.returnButton.setAttribute("aria-label", "返回博客");
+    this.returnButton.textContent = "BLOG HOME ↗";
+    this.returnButton.addEventListener("click", () => (location.hash = "#/"));
     this.returnButton.hidden = true;
-    document.body.append(this.returnButton);
+    document
+      .querySelector('.system-nav [data-action="search"]')!
+      .after(this.returnButton);
     window.addEventListener("hashchange", () => {
       if (this.enabled) this.route();
     });
@@ -128,9 +136,15 @@ export class BlogApp {
     this.booting = mode === "boot";
     this.root.classList.toggle("blog-reduced", this.host.reduced());
     if (this.booting) {
+      ++this.routeVersion;
+      this.routeExits.forEach((animation) => animation.cancel());
+      this.entrance.forEach((animation) => animation.cancel());
+      this.routeExits = [];
+      this.entrance = [];
+      this.root.inert = false;
       this.root.hidden = true;
       this.returnButton.hidden = true;
-      document.body.classList.remove("blog-visible");
+      document.body.classList.remove("blog-visible", "blog-extracting");
       document.querySelector<HTMLElement>("#stage")!.inert = false;
       return;
     }
@@ -147,9 +161,10 @@ export class BlogApp {
     this.returnButton.hidden = this.booting || !experience;
     document.body.classList.toggle("blog-visible", !this.root.hidden);
     this.root.classList.toggle("is-extracting", this.extracting);
+    this.root.classList.toggle("is-paper-retreating", this.retreating);
     document.body.classList.toggle(
       "blog-extracting",
-      this.extracting && !this.root.hidden,
+      (this.extracting || this.retreating) && !this.root.hidden,
     );
     this.root
       .querySelector<HTMLElement>(".blog-scroll")
@@ -165,14 +180,55 @@ export class BlogApp {
       });
   }
 
-  private route() {
+  private async route() {
+    const version = ++this.routeVersion;
+    const fromExperience =
+      this.root.hidden && this.root.dataset.route === "#/experience";
+    const exitNodes = !this.root.hidden
+      ? [this.root]
+      : fromExperience
+        ? [
+            ...document.querySelectorAll<HTMLElement>(
+              "#archive-ui,.system-nav,.system-footer",
+            ),
+          ]
+        : [];
+    const opacities = exitNodes.map((node) => getComputedStyle(node).opacity);
+    this.routeExits.forEach((animation) => animation.cancel());
+    this.entrance.forEach((animation) => animation.cancel());
+    this.entrance = [];
+    const samePage =
+      this.root.dataset.route?.split("?")[0] ===
+      (location.hash || "#/").split("?")[0];
+    if (
+      exitNodes.length &&
+      this.root.dataset.route &&
+      !samePage &&
+      !this.host.reduced()
+    ) {
+      this.root.inert = true;
+      this.routeExits = exitNodes.map((node, i) =>
+        node.animate([{ opacity: opacities[i] }, { opacity: 0 }], {
+          duration: 180,
+          easing: "ease-in",
+          fill: "forwards",
+        }),
+      );
+      await Promise.all(
+        this.routeExits.map((animation) => animation.finished.catch(() => {})),
+      );
+      if (version !== this.routeVersion) return;
+      this.routeExits.forEach((animation) => animation.cancel());
+      this.routeExits = [];
+    }
+    this.root.inert = false;
     const oldScroll = this.root.querySelector<HTMLElement>(".blog-scroll");
     if (oldScroll && !this.extracting)
       this.positions.set(this.root.dataset.route ?? "#/", oldScroll.scrollTop);
     this.observer?.disconnect();
     clearTimeout(this.scrollTimer);
-    const version = ++this.routeVersion;
     this.extracting = false;
+    this.retreating = false;
     if (this.sceneUnavailable && location.hash === "#/experience")
       history.replaceState(null, "", "#/");
     const hash = location.hash || "#/";
@@ -181,7 +237,13 @@ export class BlogApp {
     this.visibility();
     if (hash === "#/experience") {
       document.title = "RHINE JOURNAL · 三维书架";
-      this.host.home();
+      await this.host.home();
+      if (version !== this.routeVersion) return;
+      this.animateEntrance(
+        document.querySelectorAll<HTMLElement>(
+          "#archive-ui,.system-nav,.system-footer",
+        ),
+      );
       document
         .querySelectorAll<HTMLElement>(".brand,.powered")
         .forEach((node) => (node.inert = false));
@@ -201,10 +263,33 @@ export class BlogApp {
         this.current = post;
         this.extracting = !this.sceneUnavailable && !this.host.reduced();
         this.renderExtraction();
-        const opening = this.host.article(posts.indexOf(post), () =>
+        let revealed = false;
+        const reveal = (retreating: boolean) => {
+          if (version !== this.routeVersion || revealed) return;
+          revealed = true;
+          this.extracting = false;
+          this.retreating = retreating;
+          this.renderArticle(post);
+          this.bindReadingScroll();
+          this.visibility();
+          this.progress();
+          this.animateEntrance(
+            this.root.querySelectorAll<HTMLElement>(
+              ".blog-article-header,.blog-prose,.blog-reading-aside,.blog-reading-progress",
+            ),
+          );
           this.root
-            .querySelector("[data-document-destination]")
-            ?.getBoundingClientRect(),
+            .querySelector<HTMLElement>("h1")
+            ?.focus({ preventScroll: true });
+        };
+        const opening = this.host.article(
+          posts.indexOf(post),
+          () =>
+            (
+              this.root.querySelector("[data-document-destination]") ??
+              this.root.querySelector(".blog-article")
+            )?.getBoundingClientRect(),
+          () => reveal(true),
         );
         if (this.extracting)
           this.root.insertAdjacentHTML(
@@ -212,24 +297,17 @@ export class BlogApp {
             `<div class="blog-extraction-status" role="status"><span>正在打开 · ${esc(post.title)}</span><a href="${esc(this.lastList)}">取消并返回 ×</a></div>`,
           );
         void opening
-          .then((completed) => {
+          .then(() => {
             if (version !== this.routeVersion) return;
-            this.extracting = false;
-            this.renderArticle(post);
-            this.bindReadingScroll();
+            reveal(false);
+            this.retreating = false;
             this.visibility();
-            this.progress();
-            if (completed)
-              this.root
-                .querySelector<HTMLElement>("h1")
-                ?.focus({ preventScroll: true });
           })
           .catch((error) => {
             console.error(error);
             if (version !== this.routeVersion) return;
-            this.extracting = false;
-            this.renderArticle(post);
-            this.bindReadingScroll();
+            reveal(false);
+            this.retreating = false;
             this.visibility();
           });
         document.title = `${post.title} · 莱茵手记`;
@@ -240,6 +318,13 @@ export class BlogApp {
     this.root.classList.toggle("is-reading", !!this.current);
     this.root.classList.toggle("is-focused", this.focused);
     this.root.style.setProperty("--reading-size", `${this.fontSize}px`);
+    if (fromExperience && !this.host.reduced())
+      this.entrance.push(
+        this.root.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 320,
+          easing: "ease-out",
+        }),
+      );
     if (!this.host.reduced() && !this.extracting)
       this.root.querySelector(".blog-scroll")?.animate(
         [
@@ -270,6 +355,25 @@ export class BlogApp {
       },
       { passive: true },
     );
+  }
+
+  private animateEntrance(nodes: NodeListOf<HTMLElement>) {
+    if (this.host.reduced()) return;
+    nodes.forEach((node, index) => {
+      const animation = node.animate(
+        [
+          { opacity: 0, transform: "translateY(36px)", filter: "blur(2px)" },
+          { opacity: 1, transform: "translateY(0)", filter: "blur(0)" },
+        ],
+        {
+          duration: 420,
+          delay: index * 45,
+          easing: "cubic-bezier(.2,.75,.2,1)",
+          fill: "backwards",
+        },
+      );
+      this.entrance.push(animation);
+    });
   }
 
   private description(text: string) {

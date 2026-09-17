@@ -102,28 +102,39 @@ test("render pool remains 288 unique physical positions even at distant coordina
     assert.equal(new Set(cells.map((c) => `${c.lane}:${c.row}`)).size, 288);
   }
 });
-test("extraction opens first, clears the cover, then closes before reader handoff", () => {
-  assert.equal(documentExtraction(0).spread, 0);
-  assert.equal(documentExtraction(0.65).spread, 1);
-  assert.equal(documentExtraction(0.65).paperX, 0);
-  for (let t = 0.65; t < 1.75; t += 0.01)
-    assert.equal(documentExtraction(t).spread, 1);
-  for (let t = 1.75; t < 2.4; t += 0.01) {
-    const f = documentExtraction(t);
-    assert.equal(f.paperX, 5.5);
-    assert.equal(f.paperOpacity, 1);
-  }
-  assert.ok(Math.abs(documentExtraction(2.4).spread) < 1e-12);
-  assert.ok(documentExtraction(3.05).handoff > 0.999);
-  assert.equal(
-    documentExtraction(DOCUMENT_EXTRACTION_DURATION - 0.001).paperOpacity,
-    1,
+test("glass clears before paper moves; a single clock drives extraction and travel", () => {
+  assert.equal(documentExtraction(0).clarity, 0);
+  assert.ok(
+    documentExtraction(0.32).clarity > 0 &&
+      documentExtraction(0.32).clarity < 1,
   );
+  assert.equal(documentExtraction(0.65).clarity, 1);
+  assert.equal(documentExtraction(0.85).paperX, 0);
+  let previous = 0;
+  for (let t = 0.85; t < 3.15; t += 0.005) {
+    const frame = documentExtraction(t);
+    assert.ok(frame.motion >= previous);
+    previous = frame.motion;
+    assert.equal(frame.clarity, 1);
+    assert.equal(frame.paperOpacity, 1);
+    if (frame.paperX < 5.5) {
+      assert.equal(frame.spread, 1);
+      assert.equal(frame.handoff, 0);
+    }
+    if (frame.handoff > 0) assert.equal(frame.paperX, 5.5);
+  }
+  const overlap = documentExtraction(2.15);
+  assert.equal(overlap.revealContent, true);
+  assert.equal(overlap.paperOpacity, 1);
+  assert.ok(overlap.handoff > 0 && overlap.handoff < 1);
+  assert.equal(documentExtraction(1.6).revealContent, false);
+  assert.ok(documentExtraction(3.15).handoff > 0.999);
+  assert.equal(documentExtraction(3.15).spread, 0);
   const end = documentExtraction(DOCUMENT_EXTRACTION_DURATION);
-  assert.equal(end.spread, 0);
-  assert.equal(end.paperOpacity, 0);
   assert.equal(end.phase, "reading");
+  assert.equal(end.paperOpacity, 0);
 });
+
 test("fresh settings default to performance without overriding saved custom settings", () => {
   assert.deepEqual(normalizeQuality(undefined), qualityPresets.performance);
   assert.deepEqual(normalizeQuality(qualityPresets.high), qualityPresets.high);

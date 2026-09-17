@@ -7,14 +7,17 @@ const palette = {
 let previous = -1;
 export let themeAmount = 0;
 function rgb(hex: string) { return [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)); }
+export function themeColor(name: keyof typeof palette, amount: number) {
+  const [light,dark]=palette[name], from=rgb(light), to=rgb(dark);
+  return `rgb(${from.map((v,i)=>Math.round(v+(to[i]-v)*amount)).join(', ')})`;
+}
 export function paintTheme(amount: number) {
   if (Math.abs(amount - previous) < .0001) return;
   previous = themeAmount = amount;
   const root = document.documentElement;
   root.dataset.darkSurface = String(amount > .0001);
-  for (const [name, values] of Object.entries(palette)) {
-    const from = rgb(values[0]), to = rgb(values[1]);
-    const value = from.map((v, i) => Math.round(v + (to[i] - v) * amount)).join(", ");
+  for (const name of Object.keys(palette)) {
+    const value = themeColor(name as keyof typeof palette, amount).slice(4,-1);
     root.style.setProperty(`--theme-${name}`, `rgb(${value})`);
     root.style.setProperty(`--theme-${name}-rgb`, value);
   }

@@ -1,4 +1,5 @@
-import { documentExtraction, DOCUMENT_EXTRACTION_DURATION } from "./document-extraction";
+import { themeColor } from "./theme-ui";
+import { documentExtraction, DOCUMENT_EXTRACTION_DURATION, DOCUMENT_CLEARANCE } from "./document-extraction";
 import type { Post } from "./blog-content";
 import * as THREE from "three";
 import { ArchiveVisibility } from "./archive-visibility";
@@ -76,9 +77,11 @@ export class ArchiveScene {
   dispose() {
     this.finishArticle(false);
     if(this.articleSource) {this.scene.remove(this.articleSource.model);this.articleSource.dispose();}
+    (this.articleOverlay?.material as THREE.Material | undefined)?.dispose();
+    this.articleOverlayScene.clear();
+    this.articleTexture?.dispose();
     this.articlePaper?.geometry.dispose();
     (this.articlePaper?.material as THREE.Material | undefined)?.dispose();
-    this.articleTexture?.dispose();
     this.inputEvents.abort();
     this.cancelPointer();
     disposeThreeTree(this.scene);
@@ -504,12 +507,19 @@ export class ArchiveScene {
   private assemblyTemplate?: Promise<THREE.Group>;
   private articleSource?: Awaited<ReturnType<ArchiveScene['createAssemblyModel']>>;
   private articlePaper?: THREE.Mesh;
+  private articleOverlayScene=new THREE.Scene();
+  private articleOverlay?: THREE.Mesh;
+  private articleInitialClarity = 0;
+  private articlePost?: Post;
+  private articleCanvas=document.createElement('canvas');
   private articleTexture?: THREE.CanvasTexture;
-  private articleCanvas = document.createElement('canvas');
+  private articlePaintKey='';
   private articleActive = false;
+  private articleFraming = 0;
   private articleElapsed = -1;
   private articleCancel = 0;
   private articleResolve?: (completed: boolean) => void;
+  private articleRetreat?: () => void;
   private articleFrame = documentExtraction(-1);
   private articleDestination?: () => DOMRect | undefined;
   private articleScreen?: {left:number;top:number;right:number;bottom:number};
@@ -522,37 +532,81 @@ export class ArchiveScene {
     // a new modelling asset. Runtime transforms turn it into the removable sheet.
     const substrate = model.children.find(child => child.userData.assemblyPart === 'substrate' && child.userData.surface === 'Optical_Diffuser') as THREE.Mesh;
     const geometry = substrate.geometry.clone();
-    const positions = geometry.getAttribute('position');
-    const uvs = new Float32Array(positions.count * 2);
-    for (let i=0;i<positions.count;i++) {
-      uvs[i*2] = (positions.getX(i) + 2.4) / 4.8;
-      uvs[i*2+1] = (positions.getY(i) - .125) / 3.47;
+    geometry.computeBoundingBox();
+    const bounds=geometry.boundingBox!, size=bounds.getSize(new THREE.Vector3());
+    const positions=geometry.getAttribute('position'), uvs=new Float32Array(positions.count*2);
+    for(let i=0;i<positions.count;i++) {
+      uvs[i*2]=(positions.getX(i)-bounds.min.x)/size.x;
+      uvs[i*2+1]=(positions.getY(i)-bounds.min.y)/size.y;
     }
-    geometry.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
+    geometry.setAttribute('uv',new THREE.BufferAttribute(uvs,2));
+    this.articleCanvas.width=1536;this.articleCanvas.height=1024;
+    this.articleTexture=new THREE.CanvasTexture(this.articleCanvas);
+    this.articleTexture.colorSpace=THREE.SRGBColorSpace;
     geometry.scale(.86,.88,.3);
     geometry.translate(0,.21,.015);
-    this.articleCanvas.width = 1024;
-    this.articleCanvas.height = 720;
-    this.articleTexture = new THREE.CanvasTexture(this.articleCanvas);
-    this.articleTexture.colorSpace = THREE.SRGBColorSpace;
     const material = new THREE.MeshBasicMaterial({map:this.articleTexture,side:THREE.DoubleSide,transparent:true,toneMapped:false,fog:false});
     this.articlePaper = new THREE.Mesh(geometry,material);
     this.articlePaper.name = 'Blog document — reused Blender substrate';
     this.articlePaper.castShadow = true;
     model.add(this.articlePaper);
+    // Final sheet color is UI color, so crossfade a shared-geometry overlay after
+    // scene tone mapping. This avoids ACES shifting dark paper toward black.
+    this.articleOverlay=new THREE.Mesh(geometry,material.clone());
+    this.articleOverlay.matrixAutoUpdate=false;
+    this.articleOverlay.visible=false;
+    (this.articleOverlay.material as THREE.MeshBasicMaterial).depthTest=false;
+    this.articleOverlayScene.add(this.articleOverlay);
   }
-  private drawArticle(_post: Post) {
+  private drawArticle(post: Post) {
+    this.articlePost=post;
+    this.articlePaintKey='';
+    this.paintArticle();
     const label=this.articleSource?.model.children.find(child=>child.userData.assemblyPart==='cover' && !child.userData.surface) as THREE.Mesh | undefined;
     const map=(label?.material as THREE.MeshBasicMaterial | undefined)?.map;
     if(map?.image instanceof HTMLCanvasElement) { map.image.getContext('2d')!.drawImage(this.labelCanvas,0,0);map.needsUpdate=true; }
-    const c=this.articleCanvas.getContext('2d')!;
-    c.fillStyle='#f3f0e7';
-    c.fillRect(0,0,this.articleCanvas.width,this.articleCanvas.height);
-    this.articleTexture!.needsUpdate=true;
+
   }
-  playArticle(post: Post, destination: () => DOMRect | undefined): Promise<boolean> {
+  private paintArticle() {
+    const post=this.articlePost;
+    if(!post || !this.articleTexture)return;
+    const paper=themeColor('paper',this.themeAmount), ink=themeColor('ink',this.themeAmount), muted=themeColor('muted',this.themeAmount);
+    const key=[post.slug,paper,ink,muted].join('|');
+    if(key===this.articlePaintKey)return;
+    this.articlePaintKey=key;
+    const c=this.articleCanvas.getContext('2d')!;
+    c.fillStyle=paper;c.fillRect(0,0,1536,1024);
+    const lines=(text:string,x:number,y:number,width:number,lineHeight:number,maxLines:number)=>{
+      let line='',row=0;
+      const chars=Array.from(text);
+      for(let i=0;i<chars.length;i++) {
+        if(c.measureText(line+chars[i]).width>width && line) {
+          if(row===maxLines-1) {
+            while(line && c.measureText(line+'…').width>width)line=line.slice(0,-1);
+            c.fillText(line+'…',x,y+row*lineHeight);return;
+          }
+          c.fillText(line,x,y+row*lineHeight);row++;line='';
+        }
+        line+=chars[i];
+      }
+      c.fillText(line,x,y+row*lineHeight);
+    };
+    c.fillStyle=muted;c.font='500 30px MiSans';
+    c.fillText('RHINE JOURNAL / ARTICLE',100,112);
+    lines(post.category,100,192,1336,42,1);
+    c.fillStyle=ink;c.font='600 76px MiSans';
+    lines(post.title,100,332,1336,105,3);
+    c.fillStyle=muted;c.font='36px MiSans';
+    lines(post.description,100,666,1336,58,3);
+    c.fillStyle=themeColor('line',this.themeAmount);c.fillRect(100,886,1336,2);
+    c.fillStyle=muted;c.font='30px MiSans';
+    lines(`${post.author}  /  ${post.date}  /  ${post.minutes} 分钟阅读`,100,953,1336,40,1);
+    this.articleTexture.needsUpdate=true;
+  }
+  playArticle(post: Post, destination: () => DOMRect | undefined, onRetreat: () => void): Promise<boolean> {
     this.articleDestination = destination;
     this.finishArticle(false);
+    this.articleRetreat=onRetreat;
     if (this.reduced || !this.articleSource) { this.articleFrame=documentExtraction(DOCUMENT_EXTRACTION_DURATION); return Promise.resolve(true); }
     this.drawArticle(post);
     this.articleActive=true;
@@ -570,12 +624,15 @@ export class ArchiveScene {
     });
   }
   private finishArticle(completed: boolean) {
+    if(completed)this.decryption.finish();
     this.articleActive=false;
+    if(this.articleOverlay)this.articleOverlay.visible=false;
     this.articleCancel=0;
     this.model.visible=true;
     if(this.articleSource)this.articleSource.model.visible=false;
     this.articleResolve?.(completed);
     this.articleResolve=undefined;
+    this.articleRetreat=undefined;
   }
   private updateArticleAssembly(dt: number, cinematic: boolean) {
     if (!this.articleActive || !this.articleSource || !this.articlePaper) return;
@@ -586,6 +643,7 @@ export class ArchiveScene {
     } else if(this.articleElapsed<0) {
       if(this.detail<.9 || this.lift.value<3.7)return;
       this.articleElapsed=0;
+      this.articleInitialClarity=this.decryption.clarity;
     } else this.articleElapsed+=dt;
     const review = import.meta.env.DEV ? new URLSearchParams(location.search).get('document-time') : null;
     if(review !== null && !this.articleCancel && Number.isFinite(Number(review)))this.articleElapsed=Math.max(0,Math.min(DOCUMENT_EXTRACTION_DURATION,Number(review)));
@@ -594,7 +652,7 @@ export class ArchiveScene {
     const frame=this.articleFrame, model=this.articleSource.model;
     model.position.copy(this.model.position);model.quaternion.copy(this.model.quaternion);
     model.visible=true;this.model.visible=false;
-    this.articleSource.setClarity(1);
+    this.articleSource.setClarity(THREE.MathUtils.lerp(this.articleInitialClarity,1,frame.clarity));
     this.appearance.setTheme(model,this.themeAmount);
     for(const child of model.children) {
       if(child===this.articlePaper)continue;
@@ -606,12 +664,17 @@ export class ArchiveScene {
     this.articlePaper.position.set(frame.paperX,frame.paperY,frame.paperZ);
     this.articlePaper.quaternion.identity();
     this.articlePaper.scale.setScalar(1);
+    this.paintArticle();
     const destination=this.articleDestination?.();
     if(destination && frame.handoff>0) {
       const canvas=this.container.getBoundingClientRect();
       const depth=Math.max(this.camera.near+5,this.camera.position.distanceTo(this.model.position)-8);
       const nx=((destination.left+destination.width/2-canvas.left)/canvas.width)*2-1;
-      const ny=1-((destination.top+destination.height/2-canvas.top)/canvas.height)*2;
+      const exitWidth=Math.min(destination.width,canvas.width*.82);
+      const exitHeight=exitWidth*1024/1536;
+      // The entire sheet passes below the viewport before article UI is created.
+      const exitCenterY=canvas.bottom+48+exitHeight/2;
+      const ny=1-((exitCenterY-canvas.top)/canvas.height)*2;
       const direction=new THREE.Vector3(nx,ny,.5).unproject(this.camera).sub(this.camera.position).normalize();
       const forward=this.camera.getWorldDirection(new THREE.Vector3());
       const worldCenter=this.camera.position.clone().addScaledVector(direction,depth/direction.dot(forward));
@@ -622,10 +685,17 @@ export class ArchiveScene {
       const box=this.articlePaper.geometry.boundingBox!;
       const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
       const viewHeight=2*depth*Math.tan(THREE.MathUtils.degToRad(this.camera.fov)/2);
-      const targetScale=new THREE.Vector3(viewHeight*this.camera.aspect*destination.width/canvas.width/size.x,viewHeight*destination.height/canvas.height/size.y,1);
-      const paperCenter=center.clone().add(this.articlePaper.position).lerp(targetCenter,frame.handoff);
-      this.articlePaper.quaternion.slerp(targetRotation,frame.handoff);
-      this.articlePaper.scale.lerp(targetScale,frame.handoff);
+      const targetScale=new THREE.Vector3(viewHeight*this.camera.aspect*exitWidth/canvas.width/size.x,viewHeight*exitHeight/canvas.height/size.y,1);
+      const start=center.clone().add(this.articlePaper.position);
+      // Match the straight extraction velocity at the curve junction; never stop
+      // at the case edge before curving below the viewport.
+      const tangent=new THREE.Vector3(5.5,.15,.12).multiplyScalar((1-DOCUMENT_CLEARANCE)/(DOCUMENT_CLEARANCE*3));
+      const control1=start.clone().add(tangent);
+      const control2=targetCenter.clone().lerp(start,.16);
+      const u=frame.handoff, v=1-u;
+      const paperCenter=start.multiplyScalar(v*v*v).addScaledVector(control1,3*v*v*u).addScaledVector(control2,3*v*u*u).addScaledVector(targetCenter,u*u*u);
+      this.articlePaper.quaternion.slerp(targetRotation,frame.turn);
+      this.articlePaper.scale.lerp(targetScale,frame.turn);
       this.articlePaper.position.copy(paperCenter).sub(center.multiply(this.articlePaper.scale).applyQuaternion(this.articlePaper.quaternion));
       this.articlePaper.updateMatrixWorld(true);
       const corners=[new THREE.Vector3(box.min.x,box.min.y,0),new THREE.Vector3(box.max.x,box.max.y,0)].map(point=>this.articlePaper!.localToWorld(point).project(this.camera));
@@ -636,6 +706,19 @@ export class ArchiveScene {
     // Once clear of the case, the sheet travels in front of the array toward the reader.
     paperMaterial.depthTest=frame.handoff===0;
     this.articlePaper.renderOrder=frame.handoff>0 ? 100 : 0;
+    if(this.articleOverlay) {
+      this.articlePaper.updateMatrixWorld(true);
+      this.articleOverlay.matrix.copy(this.articlePaper.matrixWorld);
+      this.articleOverlay.visible=frame.handoff>0;
+      const overlayMaterial=this.articleOverlay.material as THREE.MeshBasicMaterial;
+      overlayMaterial.color.copy(paperMaterial.color);
+      overlayMaterial.opacity=frame.turn;
+    }
+    if(frame.revealContent && !this.articleCancel && this.articleRetreat) {
+      const reveal=this.articleRetreat;
+      this.articleRetreat=undefined;
+      queueMicrotask(reveal);
+    }
     if(this.articleElapsed>=DOCUMENT_EXTRACTION_DURATION) this.finishArticle(true);
   }
   async createAssemblyModel() {
@@ -1724,12 +1807,12 @@ export class ArchiveScene {
       detailAim.addScaledVector(up, (framing.detailY - 0.5) * height / pixelScale);
       cameraAim.lerp(detailAim, detail);
     }
-    if (!cinematic && framing.portrait && this.articleActive) {
-      // Fit both the case and the extracted sheet on narrow screens. Only the
-      // camera changes; the case still obeys its vertical-only lift invariant.
-      const travel = this.articleFrame.paperX / 5.5;
-      cameraAim.x += 2.6 * travel;
-      framing.span *= 1 + .95 * travel;
+    const articleFramingTarget=this.articleActive ? this.articleFrame.paperX/5.5 : 0;
+    this.articleFraming=this.reduced ? 0 : THREE.MathUtils.lerp(this.articleFraming,articleFramingTarget,1-Math.exp(-dt*7));
+    if (!cinematic && this.articleFraming>.0001) {
+      // Fit case and sheet together; restore the camera smoothly as UI enters.
+      cameraAim.x += (framing.portrait ? 2.6 : 1.4)*this.articleFraming;
+      framing.span *= 1+(framing.portrait ? .95 : .22)*this.articleFraming;
     }
     const cameraPosition = cameraAim
       .clone()
@@ -1855,7 +1938,7 @@ export class ArchiveScene {
       state.begin();
       state.floats(...this.camera.projectionMatrix.elements, ...this.camera.matrixWorldInverse.elements,
         ...this.camera.position.toArray(),
-        fog.near, fog.far, this.themeAmount, this.subduedIndex.value,
+        fog.near, fog.far, this.themeAmount, this.subduedIndex.value, this.articleFrame.turn, Number(this.articleActive),
         bokehUniforms.focus.value, bokehUniforms.aperture.value);
       this.scene.traverse(object => {
         state.add(object.id, Number(object.visible));
@@ -1883,6 +1966,12 @@ export class ArchiveScene {
     this.renderer.shadowMap.needsUpdate = true;
     if (this.superPerformance) this.renderer.render(this.scene, this.camera);
     else this.composer.render();
+    if(this.articleOverlay?.visible) {
+      const autoClear=this.renderer.autoClear;
+      this.renderer.autoClear=false;
+      try { this.renderer.render(this.articleOverlayScene,this.camera); }
+      finally { this.renderer.autoClear=autoClear; }
+    }
   }
   projectCard(x: number, y: number) {
     this.model.updateMatrixWorld(true);

@@ -10,7 +10,7 @@
   color: var(--blog-ink);
   display: flex;
   flex-direction: column;
-  background: linear-gradient(
+  --blog-backdrop: linear-gradient(
     90deg,
     transparent,
     color-mix(in srgb, var(--blog-paper) 88%, transparent) 34%,
@@ -19,12 +19,30 @@
   font-size: 14px;
 }
 #blog[hidden],
-.blog-return[hidden] {
+.blog-home[hidden] {
   display: none;
 }
-#blog.is-extracting {
-  background: transparent !important;
+#blog {
+  isolation: isolate;
+  background: transparent;
 }
+#blog::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--blog-backdrop);
+  opacity: 1;
+  transition: opacity 420ms ease;
+  pointer-events: none;
+}
+#blog.is-paper-retreating::before {
+  opacity: 0.65;
+}
+#blog.is-extracting::before {
+  opacity: 0;
+}
+
 #blog.is-extracting .blog-scroll,
 #blog.is-extracting .blog-reading-progress {
   opacity: 0;
@@ -388,14 +406,14 @@
   padding: 24px;
 }
 #blog.is-reading {
-  background: linear-gradient(
+  --blog-backdrop: linear-gradient(
     90deg,
     color-mix(in srgb, var(--blog-paper) 62%, transparent),
     var(--blog-paper) 29%
   );
 }
 #blog.is-focused {
-  background: var(--blog-paper);
+  --blog-backdrop: var(--blog-paper);
 }
 .blog-reading-progress {
   height: 2px;
@@ -670,18 +688,15 @@
   padding: 25px;
   line-height: 2;
 }
-.blog-return {
-  position: fixed;
-  top: 20px;
-  left: 24px;
-  z-index: 26;
-  padding: 10px 18px;
-  color: var(--theme-ink);
-  background: var(--theme-paper);
-  border: 1px solid var(--theme-line);
-  text-decoration: none;
-  font-size: 13px;
+.system-nav .blog-home {
+  white-space: nowrap;
 }
+[data-layout="portrait"] .system-nav .blog-home {
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+#blog.blog-reduced::before,
 #blog.blog-reduced *,
 #blog.blog-reduced *::before {
   animation: none !important;
@@ -717,10 +732,10 @@
 }
 @media (max-width: 700px) {
   #blog {
-    background: color-mix(in srgb, var(--blog-paper) 94%, transparent);
+    --blog-backdrop: color-mix(in srgb, var(--blog-paper) 94%, transparent);
   }
   #blog.is-reading {
-    background: var(--blog-paper);
+    --blog-backdrop: var(--blog-paper);
   }
   .blog-header {
     padding: max(16px, env(safe-area-inset-top)) 20px 16px;
@@ -853,7 +868,7 @@
   .blog-adjacent,
   .blog-footer,
   .blog-reading-progress,
-  .blog-return {
+  .blog-home {
     display: none !important;
   }
   #blog {
@@ -878,8 +893,11 @@
 }
 
 /* Keep the travelling sheet above the scene atmosphere, including portrait masks. */
+.blog-visible .scene-atmosphere {
+  transition: opacity 420ms ease;
+}
 .blog-extracting .scene-atmosphere {
-  visibility: hidden !important;
+  opacity: 0 !important;
 }
 
 @media (max-width: 700px) {
@@ -888,5 +906,19 @@
     bottom: auto;
     padding: 12px;
     font-size: 11px;
+  }
+}
+
+/* The added home entry gets its own row below the brand on portrait screens. */
+[data-layout="portrait"] .system-nav:has(.blog-home) {
+  top: calc(var(--top-edge) + 62px);
+}
+
+.blog-visible .reduce-motion .scene-atmosphere {
+  transition: none;
+}
+@media print {
+  #blog::before {
+    display: none;
   }
 }

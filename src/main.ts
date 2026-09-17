@@ -1260,7 +1260,7 @@ if (isWallpaper) {
 let articleRequest=0;
 if (!isWallpaper && !reviewEntry) {
   blog = new BlogApp({
-    article: async (index, destination) => {
+    article: async (index, destination, onRetreat) => {
       const request=++articleRequest;
       if (!ready || !posts[index]) return false;
       await scene?.cancelArticle();
@@ -1269,11 +1269,12 @@ if (!isWallpaper && !reviewEntry) {
       setMode("detail");
       pendingDetailFocus = false;
       audio.play("open");
-      return scene ? scene.playArticle(posts[index], destination) : true;
+      return scene ? scene.playArticle(posts[index], destination, onRetreat) : true;
     },
-    home: () => {
+    home: async () => {
       const request=++articleRequest;
-      void (async () => { await scene?.cancelArticle(); if (ready && request===articleRequest) closeModal(() => setMode("archive")); })();
+      await scene?.cancelArticle();
+      if (ready && request===articleRequest) await new Promise<void>(resolve=>closeModal(() => {setMode("archive");resolve();}));
     },
     replay: () => replayBoot(),
     theme: () => { prefs.colorTheme = prefs.colorTheme === "dark" ? "light" : "dark"; savePrefs(); if (!scene) paintTheme(prefs.colorTheme === "dark" ? 1 : 0); },
