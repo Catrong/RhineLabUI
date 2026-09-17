@@ -3,7 +3,7 @@ const ease = (value: number) => {
   const t = clamp(value);
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
-export const DOCUMENT_PAPER_START = 0.5;
+export const DOCUMENT_PAPER_START = 0.08;
 export const DOCUMENT_EXTRACTION_DURATION = DOCUMENT_PAPER_START + 2.3;
 export const DOCUMENT_CLEARANCE = 0.42;
 /** One motion clock: straight out of the case, then a tangent-continuous arc. */
@@ -13,7 +13,7 @@ export function documentExtraction(time: number) {
   const handoff = clamp(
     (motion - DOCUMENT_CLEARANCE) / (1 - DOCUMENT_CLEARANCE),
   );
-  const opening = ease((time - 0.08) / 0.4);
+  const opening = ease((time - DOCUMENT_PAPER_START) / 0.4);
   const closing = ease((motion - DOCUMENT_CLEARANCE) / 0.36);
   return {
     clarity: ease(time / 0.45),
@@ -30,14 +30,12 @@ export function documentExtraction(time: number) {
     phase:
       time < 0
         ? "lifting"
-        : time < 0.45
+        : time < DOCUMENT_PAPER_START
           ? "clearing"
-          : time < DOCUMENT_PAPER_START
-            ? "opening"
-            : motion < DOCUMENT_CLEARANCE
-              ? "extracting"
-              : time < DOCUMENT_EXTRACTION_DURATION
-                ? "travelling"
-                : "reading",
+          : motion < DOCUMENT_CLEARANCE
+            ? "extracting"
+            : time < DOCUMENT_EXTRACTION_DURATION
+              ? "travelling"
+              : "reading",
   };
 }

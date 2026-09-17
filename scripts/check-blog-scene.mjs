@@ -103,7 +103,7 @@ test("render pool remains 288 unique physical positions even at distant coordina
     assert.equal(new Set(cells.map((c) => `${c.lane}:${c.row}`)).size, 288);
   }
 });
-test("glass clears before paper moves; a single clock drives extraction and travel", () => {
+test("paper extraction starts with disassembly and shares its continuous clock", () => {
   assert.equal(documentExtraction(0).clarity, 0);
   assert.ok(
     documentExtraction(0.32).clarity > 0 &&
@@ -111,15 +111,19 @@ test("glass clears before paper moves; a single clock drives extraction and trav
   );
   assert.equal(documentExtraction(0.65).clarity, 1);
   assert.equal(documentExtraction(DOCUMENT_PAPER_START).paperX, 0);
+  assert.equal(documentExtraction(DOCUMENT_PAPER_START).spread, 0);
+  const firstMotion = documentExtraction(DOCUMENT_PAPER_START + .02);
+  assert.ok(firstMotion.spread > 0 && firstMotion.paperX > 0);
+  assert.ok(firstMotion.spread < 1 && firstMotion.clarity < 1);
   let previous = 0;
   for (let t = DOCUMENT_PAPER_START; t < DOCUMENT_EXTRACTION_DURATION; t += 0.005) {
     const frame = documentExtraction(t);
     assert.ok(frame.motion >= previous);
     previous = frame.motion;
-    assert.equal(frame.clarity, 1);
+    if (t >= .45) assert.equal(frame.clarity, 1);
     assert.equal(frame.paperOpacity, 1);
     if (frame.paperX < 5.5) {
-      assert.equal(frame.spread, 1);
+      if (t >= DOCUMENT_PAPER_START + .4) assert.equal(frame.spread, 1);
       assert.equal(frame.handoff, 0);
     }
     if (frame.handoff > 0) assert.equal(frame.paperX, 5.5);
