@@ -12,9 +12,8 @@ export class ArchiveHoverTitle {
     }),
   );
   private title = "";
-  private previous = "";
-  private elapsed = 1;
-  private fade = 1;
+  private progress = 0;
+  private height = 0;
   private paintKey = "";
   private fontRevision = 0;
   private local = new THREE.Matrix4();
@@ -22,6 +21,7 @@ export class ArchiveHoverTitle {
 
   constructor() {
     this.texture.colorSpace = THREE.SRGBColorSpace;
+    this.texture.anisotropy = 8;
     this.mesh.name = "archive-hover-title";
     this.mesh.matrixAutoUpdate = false;
     this.mesh.visible = false;
@@ -34,48 +34,50 @@ export class ArchiveHoverTitle {
     // Mesh geometry, material and map belong to the scene disposal traversal.
   }
 
-  update(matrix: THREE.Matrix4 | null, title: string, dt: number, colors: { paper: string; ink: string; line: string }, reduced: boolean) {
-    if (!matrix) { this.mesh.visible = false; return; }
-    if (title !== this.title || !this.mesh.visible) {
-      this.previous = this.mesh.visible ? this.title : "";
-      this.title = title;
-      this.elapsed = this.previous ? 0 : 1;
-      if (!this.mesh.visible) this.fade = 0;
-    }
-    this.mesh.visible = true;
-    this.elapsed = reduced ? 1 : Math.min(1, this.elapsed + dt / .46);
-    this.fade = reduced ? 1 : Math.min(1, this.fade + dt / .22);
-    const progress = 1 - Math.pow(1 - this.elapsed, 3);
+  update(matrix: THREE.Matrix4 | null, title: string, dt: number, colors: { paper: string; ink: string; line: string }, reduced: boolean, hovered = Boolean(matrix)) {
+    if (!matrix) { this.mesh.visible = false; this.progress = 0; return; }
+    this.title = title;
+    const target = Number(hovered);
+    this.progress = reduced ? target : THREE.MathUtils.clamp(this.progress + (hovered ? 1 : -1) * dt / .3, 0, 1);
+    this.mesh.visible = this.progress > 0;
+    if (!this.mesh.visible) return;
     const { paper, ink, line } = colors;
-    const key = [title, this.previous, progress, paper, ink, line, this.fontRevision].join("|");
+    const key = [this.title, paper, ink, line, this.fontRevision].join("|");
     if (key !== this.paintKey) {
       this.paintKey = key;
       const c = this.canvas.getContext("2d")!;
-      const wrap = (text: string) => {
-        c.font = "39px MiSans, sans-serif";
-        const rows: string[] = []; let row = "";
-        for (const char of text) {
-          if (row && c.measureText(row + char).width > 1008) { rows.push(row); row = ""; }
-          row += char;
-        }
-        if (row) rows.push(row);
-        return rows;
-      };
-      const rows = wrap(title), oldRows = progress < 1 ? wrap(this.previous) : [];
-      const height = 48 + Math.max(1, rows.length, oldRows.length) * 62;
-      this.canvas.width = 1080; this.canvas.height = height;
-      c.fillStyle = paper; c.fillRect(0, 0, 1080, height);
-      c.fillStyle = line; c.fillRect(0, height - 3, 1080, 3);
-      c.save(); c.beginPath(); c.rect(36, 24, 1008, height - 48); c.clip();
-      c.font = "39px MiSans, sans-serif"; c.textBaseline = "top"; c.fillStyle = ink;
-      if (progress < 1) oldRows.forEach((row, i) => c.fillText(row, 36, 24 + i * 62 - progress * height));
-      rows.forEach((row, i) => c.fillText(row, 36, 24 + i * 62 + (1 - progress) * height));
-      c.restore();
+      // Double-resolution texture and slightly stronger strokes retain detail
+      // along the oblique cover plane; movement never repaints the glyphs.
+      c.font = "500 78px MiSans, sans-serif";
+      const rows: string[] = []; let row = "";
+      for (const char of title) {
+        if (row && c.measureText(row + char).width > 2016) { rows.push(row); row = ""; }
+        row += char;
+      }
+      if (row) rows.push(row);
+      const height = 96 + Math.max(1, rows.length) * 124;
+      this.canvas.width = 2160; this.canvas.height = height;
+      c.fillStyle = paper; c.fillRect(0, 0, 2160, height);
+      c.fillStyle = line; c.fillRect(0, height - 6, 2160, 6);
+      c.font = "500 78px MiSans, sans-serif"; c.textBaseline = "top"; c.fillStyle = ink;
+      rows.forEach((text, i) => c.fillText(text, 72, 48 + i * 124));
       this.texture.needsUpdate = true;
+      this.height = 5 * height / 2160;
     }
-    this.mesh.material.opacity = this.fade;
-    this.local.makeScale(5, 5 * this.canvas.height / 1080, 1);
-    this.local.setPosition(-2.5, 3.92, .255);
+    const eased = this.progress * this.progress * (3 - 2 * this.progress);
+    const edge = 3.76;
+    const bottom = 3.92 - (this.height + 3.92 - edge) * (1 - eased);
+    const visibleBottom = Math.max(edge, bottom);
+    const visibleHeight = Math.max(0, bottom + this.height - visibleBottom);
+    // Crop below the slot edge instead of fading or showing through the glass.
+    // UV cropping preserves the full-size glyphs as the title rises/falls.
+    const uv = this.mesh.geometry.getAttribute("uv") as THREE.BufferAttribute;
+    const lowerUV = (visibleBottom - bottom) / this.height;
+    if (Math.abs(uv.getY(2) - lowerUV) > 1e-7) {
+      uv.setY(2, lowerUV); uv.setY(3, lowerUV); uv.needsUpdate = true;
+    }
+    this.local.makeScale(5, visibleHeight, 1);
+    this.local.setPosition(-2.5, visibleBottom, .255);
     this.mesh.matrix.multiplyMatrices(matrix, this.local);
     this.mesh.matrixWorldNeedsUpdate = true;
   }

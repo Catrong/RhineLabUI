@@ -64,6 +64,7 @@ const ease = (t: number) => {
 export class ArchiveScene {
   private inputEvents = new AbortController();
   private hoverTitle = new ArchiveHoverTitle();
+  private hoverTitleCell: ArchiveCell | null = null;
   private presence = 1;
   private presenceTarget = 1;
   setPresentationVisible(visible: boolean, immediate = false) {
@@ -296,6 +297,7 @@ export class ArchiveScene {
     );
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.addEventListener('webglcontextrestored', () => this.renderState.invalidate(), { signal: this.inputEvents.signal });
+    this.hoverTitle.mesh.material.map!.anisotropy = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
     this.scene.add(this.hoverTitle.mesh);
     this.scene.background = new THREE.Color("#eae5e1");
     // The frame updates world matrices once after simulation; subsequent
@@ -1967,9 +1969,14 @@ export class ArchiveScene {
     // Keep all simulation and picking current. Reuse the composited canvas only
     // when its actual inputs are identical, including late textures and materials.
     this.updateArticleAssembly(dt, Boolean(cinematic));
-    this.hoverTitle.update(cinematic ? null : this.hoverMatrix(),
-      this.hoverCell ? records[fileAtCell(this.hoverCell)]?.title ?? "" : "",
-      dt, { paper: themeColor("paper", this.themeAmount), ink: themeColor("ink", this.themeAmount), line: themeColor("line", this.themeAmount) }, this.reduced);
+    // Keep a single title attached to its original physical card until it has
+    // retracted; a different hovered card waits, while re-hover reverses in place.
+    if (!this.hoverTitle.mesh.visible) this.hoverTitleCell = this.hoverCell ? { ...this.hoverCell } : null;
+    const titleAllowed = !cinematic && this.canBrowse();
+    this.hoverTitle.update(titleAllowed ? this.hoverMatrix(this.hoverTitleCell) : null,
+      this.hoverTitleCell ? records[fileAtCell(this.hoverTitleCell)]?.title ?? "" : "",
+      dt, { paper: themeColor("paper", this.themeAmount), ink: themeColor("ink", this.themeAmount), line: themeColor("line", this.themeAmount) }, this.reduced,
+      titleAllowed && !!this.hoverCell && !!this.hoverTitleCell && sameCell(this.hoverCell, this.hoverTitleCell));
     const state = this.renderState;
     this.scene.updateMatrixWorld();
     // A changed instance buffer already proves the image changed. Avoid a
@@ -2017,19 +2024,19 @@ export class ArchiveScene {
       finally { this.renderer.autoClear=autoClear; }
     }
   }
-  private hoverMatrix() {
-    if(!this.hoverCell || !this.canBrowse())return null;
+  private hoverMatrix(cell: ArchiveCell | null) {
+    if(!cell || !this.canBrowse())return null;
     const matrix=new THREE.Matrix4();
-    if(sameCell(this.hoverCell,this.selectedCell)) {
+    if(sameCell(cell,this.selectedCell)) {
       this.model.updateWorldMatrix(true,false);
       matrix.copy(this.model.matrixWorld);
     } else {
-      const outgoing=this.outgoing.find(o=>sameCell(o.cell,this.hoverCell!));
+      const outgoing=this.outgoing.find(o=>sameCell(o.cell,cell!));
       if(outgoing) {
         outgoing.group.updateWorldMatrix(true,false);
         matrix.copy(outgoing.group.matrixWorld);
       } else {
-        const index=this.drawnCells.findIndex(cell=>sameCell(cell,this.hoverCell!));
+        const index=this.drawnCells.findIndex(candidate=>sameCell(candidate,cell));
         if(index<0)return null;
         this.instances[0].getMatrixAt(index,matrix);
         matrix.premultiply(this.instances[0].matrixWorld);
