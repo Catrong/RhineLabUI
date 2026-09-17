@@ -1026,7 +1026,7 @@ function frame(ms: number) {
   requestAnimationFrame(frame);
 }
 function bindScene(scene: ArchiveScene, cell?: { lane: number; row: number }) {
-    document.body.append($("#hover-label"));
+    $("#three-scene").append($("#hover-label"));
     scene.onOpen=()=>{
       if(mode==='archive' && !modal && !viewer?.isOpen && !blog?.visible)openFile();
     };

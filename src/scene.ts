@@ -2031,8 +2031,9 @@ export class ArchiveScene {
     const corners=[[-2.5,3.92+labelHeight],[2.5,3.92+labelHeight],[2.5,3.92],[-2.5,3.92]];
     const points=corners.map(([x,y])=>new THREE.Vector3(x,y,.255).applyMatrix4(matrix).project(this.camera));
     if(points.some(point=>point.z < -1 || point.z > 1))return null;
-    const rect=this.renderer.domElement.getBoundingClientRect();
-    return points.map(point=>({x:rect.left+(point.x+1)*rect.width/2,y:rect.top+(1-point.y)*rect.height/2}));
+    // The label shares the scene container's stacking context below the HUD.
+    // Use local CSS pixels; the stage applies its viewport scale once to both.
+    return points.map(point=>({x:(point.x+1)*this.container.clientWidth/2,y:(1-point.y)*this.container.clientHeight/2}));
   }
   projectCard(x: number, y: number) {
     this.model.updateMatrixWorld(true);
