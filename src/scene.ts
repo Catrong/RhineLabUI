@@ -2005,23 +2005,28 @@ export class ArchiveScene {
       finally { this.renderer.autoClear=autoClear; }
     }
   }
-  hoverAnchor() {
-    if(!this.hoverCell || !this.canBrowse())return null;
-    const point=new THREE.Vector3(0,3.92,.1);
-    if(sameCell(this.hoverCell,this.selectedCell))this.model.localToWorld(point);
+  hoverQuad(width: number, height: number) {
+    if(!this.hoverCell || !this.canBrowse() || !width || !height)return null;
+    const matrix=new THREE.Matrix4();
+    if(sameCell(this.hoverCell,this.selectedCell))matrix.copy(this.model.matrixWorld);
     else {
       const outgoing=this.outgoing.find(o=>sameCell(o.cell,this.hoverCell!));
-      if(outgoing)outgoing.group.localToWorld(point);
+      if(outgoing)matrix.copy(outgoing.group.matrixWorld);
       else {
         const index=this.drawnCells.findIndex(cell=>sameCell(cell,this.hoverCell!));
         if(index<0)return null;
-        const matrix=new THREE.Matrix4();this.instances[0].getMatrixAt(index,matrix);point.applyMatrix4(matrix);
+        this.instances[0].getMatrixAt(index,matrix);
+        matrix.premultiply(this.instances[0].matrixWorld);
       }
     }
-    point.project(this.camera);
-    if(point.z < -1 || point.z > 1)return null;
+    // The label occupies the same local XY plane as the cover. Its bottom-left
+    // sits just above the card's left edge; all four corners retain perspective.
+    const labelHeight=5*height/width;
+    const corners=[[-2.5,3.92+labelHeight],[2.5,3.92+labelHeight],[2.5,3.92],[-2.5,3.92]];
+    const points=corners.map(([x,y])=>new THREE.Vector3(x,y,.255).applyMatrix4(matrix).project(this.camera));
+    if(points.some(point=>point.z < -1 || point.z > 1))return null;
     const rect=this.renderer.domElement.getBoundingClientRect();
-    return {x:rect.left+(point.x+1)*rect.width/2,y:rect.top+(1-point.y)*rect.height/2};
+    return points.map(point=>({x:rect.left+(point.x+1)*rect.width/2,y:rect.top+(1-point.y)*rect.height/2}));
   }
   projectCard(x: number, y: number) {
     this.model.updateMatrixWorld(true);
