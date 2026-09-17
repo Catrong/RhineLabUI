@@ -13,3 +13,5 @@
 ## 悬停标题字形排列修复
 
 滚动库原先把投影后的字符包围框除以整体缩放值来求局部坐标，无法适配倾斜透视。悬停标题以 data-rn-local-layout 显式启用本地排版：使用测量容器内的 offsetLeft/offsetTop，并关闭由屏幕左边缘变化推导的位移补偿；字符尺寸继续使用原有本地尺寸补丁。整段文字只经外层四角矩阵投影一次，保留滚动动效，其他标题不变。补丁随 postinstall/prebuild 重现。按用户要求不进行浏览器验证。
+
+后续开发环境修复：node_modules/.vite/deps/@kitlangton_rolling-number.js 实际仍包含旧屏幕坐标公式，未包含 data-rn-local-layout 分支，导致此前源码补丁没有进入正在运行的开发页面。Vite 现在将该原生 ESM 包排除出 optimizeDeps，直接服务已打补丁的源文件；配置变更触发开发服务重启，避免依赖锁文件不变时继续复用旧包。

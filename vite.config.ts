@@ -14,6 +14,9 @@ const hasNovecento = ["Normal", "DemiBold", "Bold"].every(weight =>
 );
 export default defineConfig(({ mode }) => ({
   base: mode === "wallpaper" ? "./" : "/",
+  // This ESM dependency is patched locally before dev/build. Serve its source
+  // directly so Vite cannot retain obsolete screen-space glyph measurements.
+  optimizeDeps: { exclude: ["@kitlangton/rolling-number"] },
   define: {
     __RHINE_MODELS__: JSON.stringify(Object.fromEntries(models.map(model => [model.key,model.fileName]))),
     __RHINE_NOVECENTO__: JSON.stringify(hasNovecento),
